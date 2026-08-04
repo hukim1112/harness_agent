@@ -34,3 +34,7 @@ samples/sample_report.txt
 samples/rendered_pages/
 samples/sample_report.pdf
 notebooks/pdf/
+
+# Local experiment directories
+scratch/
+sandbox/
