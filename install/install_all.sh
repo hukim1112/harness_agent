@@ -9,11 +9,17 @@ echo "🚀 Github Codespaces / WSL 환경 자동 설치를 시작합니다..."
 if [ -f "requirements.txt" ]; then
     echo "🐍 Python 패키지 의존성 설치 중..."
     pip install -r requirements.txt
+
+    # 2. Playwright Chromium 브라우저 및 시스템 의존성 설치 (Headless 브라우저 구동용)
+    echo "🌐 Playwright Chromium 브라우저 설치 중..."
+    playwright install chromium
+    echo "📦 Chromium 시스템 의존성 설치 중..."
+    sudo playwright install-deps chromium
 else
     echo "⚠️ requirements.txt 파일을 찾을 수 없어 Python 패키지 설치를 건너뜁니다."
 fi
 
-# 4. .env 파일 생성 (.env.example 복사)
+# 3. .env 파일 생성 (.env.example 복사)
 if [ ! -f "../.env" ]; then
     cp ../.env.example ../.env
     echo "📄 .env 파일이 성공적으로 생성되었습니다. API 키를 설정해 주세요."
@@ -21,7 +27,8 @@ else
     echo "📄 .env 파일이 이미 존재합니다. 덮어쓰지 않습니다."
 fi
 
-# 5. 완료 메시지
+# 4. 완료 메시지
 echo "---------------------------------------------------------"
 echo "✅ 전체 설치 및 환경 세팅이 성공적으로 완료되었습니다!"
 echo "---------------------------------------------------------"
+
