@@ -1,0 +1,2 @@
+{"session_id": "SESS-MONITOR-001", "query": "엔비디아 Blackwell GTC 2026 뉴스를 검색해서 요약해줘.", "latency_ms": 6505, "status": "SUCCESS", "response_length": 624, "timestamp": "2026-08-04T21:29:06Z"}
+{"session_id": "SESS-MONITOR-001", "query": "엔비디아 Blackwell GTC 2026 뉴스를 검색해서 요약해줘.", "latency_ms": 4132, "status": "SUCCESS", "response_length": 159, "timestamp": "2026-08-04T21:35:05Z"}

@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+venv/
+ENV/
+env/
+
+# Databases & Caching
+*.db
+*.db-journal
+*.sqlite3
+
+# Task tracking & State
+task.md
+task_state.json
+TASK.md
+*.log
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# IDEs
+.vscode/
+.idea/
+
+# Test generation residues
+samples/sample_report.txt
+samples/rendered_pages/
+samples/sample_report.pdf
+notebooks/pdf/

@@ -1,0 +1,37 @@
+# ===============================================================================
+# agent-harness-lab: Production Agent Harness Engineering Dependencies
+# ===============================================================================
+
+# Core Frameworks & Orchestration
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-openai>=0.2.0
+langchain-anthropic>=0.2.0
+langgraph>=0.2.0
+
+# Data Models & Schema Validation
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+
+# Memory & Vector Database & SQLite FTS5
+chromadb>=0.5.0
+tiktoken>=0.7.0
+
+# Monitoring & Governance
+langfuse>=2.30.0
+opentelemetry-api>=1.24.0
+
+# Terminal UI & Visualization
+rich>=13.7.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+plotly>=5.20.0
+jupyter>=1.0.0
+
+# Serving & Web Chat UI
+streamlit>=1.35.0
+fastapi>=0.111.0
+uvicorn>=0.30.0
+python-dotenv>=1.0.0
+duckduckgo_search>=8.1.1
