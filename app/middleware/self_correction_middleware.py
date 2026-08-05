@@ -30,7 +30,7 @@ def tool_call_limit_middleware(state: AgentState, runtime: Runtime) -> dict[str,
     # 궤적 이력 중 ToolMessage(도구 실행 결과)의 개수를 누적 카운트
     tool_calls_count = sum(1 for msg in messages if msg.__class__.__name__ == "ToolMessage")
     
-    max_tool_limit = 20
+    max_tool_limit = 50
     if tool_calls_count >= max_tool_limit:
         print(f"🛑 [Harness Middleware] Tool Call Limit Exceeded (Limit: {max_tool_limit}). Forcing termination.")
         from langgraph.types import Command
