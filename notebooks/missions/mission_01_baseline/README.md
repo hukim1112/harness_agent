@@ -39,7 +39,7 @@ from langchain.agents import create_agent
 from app.utils.llm import get_llm
 
 # TODO: LLM 및 에이전트 생성
-llm = get_llm(model_name="openai:gpt-4o")
+llm = get_llm(model_name="gemini-3.5-flash")
 agent = create_agent(
     model=llm,
     tools=[],
