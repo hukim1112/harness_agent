@@ -11,7 +11,7 @@ class PromptManager:
         self.boundary_marker = "=== DYNAMIC_BOUNDARY ==="
         
         # Load static layers from files
-        self.l1_role = self._load_file("PROMPT.md", "You are a super agent, a professional production-grade software engineering agent.")
+        self.l1_role = self._load_file("PROMPT.md", "You are Harness agent, a professional production-grade software engineering agent.")
         self.l3_rules = self._load_file("AGENT.md", "## Core Policy:\n1. Prioritize security boundaries.\n2. Do not mutate state without pre-approval.")
         
         # L2 and L4 are dynamic/set runtime
