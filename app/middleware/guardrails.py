@@ -6,13 +6,17 @@ from app.utils import get_llm
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
+def clean_content(content) -> str:
+    if isinstance(content, list):
+        return "".join([block.get("text", "") if isinstance(block, dict) else str(block) for block in content])
+    return str(content)
+
 class InputSafetyGuardrail(AgentMiddleware):
     """입력 유해 규정 검사 보안 필터 미들웨어 (Llama Guard 아키텍처 계승)"""
     def __init__(self, model="gemini-3.5-flash", temperature=0.0):
         self.llm = get_llm(model_name=model, temperature=temperature)
         
-    def wrap_call(self, request, handler):
-        # request가 dict 타입이거나 ModelRequest 객체일 수 있으므로 두 구조 모두 대응
+    def wrap_model_call(self, request, handler):
         messages = []
         if isinstance(request, dict):
             messages = request.get("messages", [])
@@ -25,6 +29,7 @@ class InputSafetyGuardrail(AgentMiddleware):
             return handler(request)
             
         user_query = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
+        user_query = clean_content(user_query)
         
         # 유해 규정 심사 가이드라인 정의
         system_prompt = """
@@ -47,7 +52,8 @@ class InputSafetyGuardrail(AgentMiddleware):
         ])
         
         chain = prompt | self.llm
-        judgment = chain.invoke({"text": user_query}).content.strip()
+        judgment_raw = chain.invoke({"text": user_query}).content
+        judgment = clean_content(judgment_raw).strip()
         
         if "unsafe" in judgment:
             print(f"🛡️ [InputSafetyGuardrail] 차단됨: {judgment}")
@@ -65,7 +71,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
     def __init__(self, model="gemini-3.5-flash", temperature=0.0):
         self.llm = get_llm(model_name=model, temperature=temperature)
         
-    def wrap_call(self, request, handler):
+    def wrap_model_call(self, request, handler):
         messages = []
         if isinstance(request, dict):
             messages = request.get("messages", [])
@@ -78,6 +84,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
             return handler(request)
             
         user_query = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
+        user_query = clean_content(user_query)
         
         # 주제 이탈 감지 라우팅 프롬프트
         intent_prompt = ChatPromptTemplate.from_messages([
@@ -93,7 +100,8 @@ class TopicAlignmentGuardrail(AgentMiddleware):
         ])
         
         intent_chain = intent_prompt | self.llm
-        intent_result = intent_chain.invoke({"text": user_query}).content.strip().lower()
+        intent_result_raw = intent_chain.invoke({"text": user_query}).content
+        intent_result = clean_content(intent_result_raw).strip().lower()
         
         if "off_topic" in intent_result:
             print(f"🛑 [TopicAlignmentGuardrail] 차단됨: 비즈니스 이탈 화제 감지")
@@ -114,17 +122,16 @@ class OutputSchemaRepairGuardrail(AgentMiddleware):
         self.llm = get_llm(model_name=model, temperature=0.0)
         self.max_retry = max_retry
         
-    def wrap_call(self, request, handler):
+    def wrap_model_call(self, request, handler):
         response = handler(request)
-        # response가 AIMessage이거나 dict 타입일 수 있으므로 포맷 추출
         raw_content = ""
         if hasattr(response, "content"):
             raw_content = response.content
         elif isinstance(response, dict) and "messages" in response:
             raw_content = response["messages"][-1].content
             
+        raw_content = clean_content(raw_content)
         try:
-            # Pydantic 파서를 통한 유효성 검사 수행
             self.parser.parse(raw_content)
             return response
         except Exception as parse_error:
@@ -149,11 +156,12 @@ class OutputSchemaRepairGuardrail(AgentMiddleware):
             
             for attempt in range(self.max_retry):
                 try:
-                    repaired_raw = feedback_chain.invoke({
+                    repaired_raw_raw = feedback_chain.invoke({
                         "error": str(parse_error),
                         "format_instructions": format_instructions,
                         "bad_content": raw_content
-                    }).content.strip()
+                    }).content
+                    repaired_raw = clean_content(repaired_raw_raw).strip()
                     
                     # 수선된 내용 검증
                     self.parser.parse(repaired_raw)
