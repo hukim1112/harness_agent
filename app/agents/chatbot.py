@@ -4,7 +4,7 @@ from app.utils import get_llm
 from app.prompts import CHATBOT_SYSTEM_PROMPT
 from app.tools import tools_chatbot
 from app.utils.context import AgentContext
-from harness.monitoring import LoggingMiddleware
+from app.middleware.reference_logging import ReferenceLoggingMiddleware as LoggingMiddleware
 
 def get_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용 (openai: 접두사로 공급자 강제 매칭)

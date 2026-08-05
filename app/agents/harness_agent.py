@@ -7,7 +7,7 @@ from app.utils.context import AgentContext
 # TODO: Mission 02 - SQLite 체크포인터 임포트
 # from langgraph.checkpoint.sqlite import SqliteSaver
 # TODO: Mission 04 - 로깅 미들웨어 임포트
-# from harness.monitoring import LoggingMiddleware
+# from app.middleware.logging_middleware import LoggingMiddleware
 
 def get_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용 (openai: 접두사로 공급자 강제 매칭)
