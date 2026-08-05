@@ -1,6 +1,24 @@
 import os
 import json
 from typing import List, Dict, Any
+'''
+ ┌────────────────────────────────────────────────────────┐
+ │ L1 ROLE (Static - PROMPT.md 로드)                       │
+ ├────────────────────────────────────────────────────────┤
+ │ L2 GUIDE (Static - AGENT.md 로드)                       │
+ ├────────────────────────────────────────────────────────┤
+ │ L3 Tools Specs (Static - 빌드된 도구 목록 API 규격)        │
+ ├────────────────────────────────────────────────────────┤
+ │ STATIC REFERENCE CONTEXT (Static - 대형 규격/매뉴얼 문서) │
+ └───────────────────────────┬────────────────────────────┘
+                             │  [=== DYNAMIC_BOUNDARY ===] 캐시 마커 경계선
+                             ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ L4 DYNAMIC RULES/ENV (Dynamic - OS, 시간, 런타임 권한)    │
+ ├────────────────────────────────────────────────────────┤
+ │ L5 INJECTED MEMORY (Dynamic - 실시간 인출된 에피소드 기억)│
+ └────────────────────────────────────────────────────────┘
+'''
 
 class PromptManager:
     def __init__(self, prompt_dir=None):
@@ -21,8 +39,8 @@ class PromptManager:
         # Static Reference Context (Stored above boundary to enable caching benchmark)
         self.static_reference = ""
         
-        # L5: Injected Memory (Dynamic memory)
-        self.l5_memory = "No recalled memories for the current query."
+        # L5: Dynamic Context (Dynamic info, e.g. memories, status, etc.)
+        self.l5_dynamic_context = "No dynamic context provided."
 
     def _load_file(self, filename: str, fallback: str) -> str:
         filepath = os.path.join(self.prompt_dir, filename)
@@ -35,9 +53,9 @@ class PromptManager:
         """Sets the large static reference manual (caching benchmark target) above the boundary."""
         self.static_reference = context_text
 
-    def set_injected_memory(self, memory_text: str):
-        """Sets the dynamic recalled memory (L5) below the boundary."""
-        self.l5_memory = memory_text
+    def set_dynamic_context(self, context_text: str):
+        """Sets the dynamic context (L5) below the boundary."""
+        self.l5_dynamic_context = context_text
 
     def build_tool_specifications(self, tools: List[Any]):
         """Dynamically build L3 tool specifications from LangChain tools list."""
@@ -54,7 +72,7 @@ class PromptManager:
         """
         Assembles 5-layer prompt stack with the boundary marker at the correct position.
         L1, L2, L3, and Static Reference are placed ABOVE the boundary marker (cached).
-        L4 (Dynamic environment rules) and L5 (Injected Memory) are placed BELOW (uncached).
+        L4 (Dynamic environment rules) and L5 (Dynamic Context) are placed BELOW (uncached).
         """
         # L4: Dynamic Project Rules & Environment
         permission_string = f"Current User Permissions: {dynamic_state.get('user_permission', 'NONE')}"
@@ -68,6 +86,6 @@ class PromptManager:
             f"=== STATIC REFERENCE CONTEXT ===\n{self.static_reference}\n\n"
             f"{self.boundary_marker}\n\n"
             f"=== DYNAMIC RULES/ENV (L4) ===\n{l4_env}\n\n"
-            f"=== INJECTED MEMORY (L5) ===\n{self.l5_memory}"
+            f"=== DYNAMIC CONTEXT (L5) ===\n{self.l5_dynamic_context}"
         )
         return full_prompt
