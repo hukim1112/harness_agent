@@ -16,17 +16,17 @@
 
 ### [태스크 1] 중앙 LLM 팩토리 연동
 *   `app/utils/llm.py` 모듈에 있는 `get_llm` 함수를 이용하여 에이전트의 두뇌가 될 `ChatModel`을 생성합니다.
-*   기본 모델은 `openai:gpt-4o` 또는 `google_vertexai:gemini-2.5-pro` 중 하나를 선택해 기동합니다.
+*   기본 모델은 `google_vertexai:gemini-3.5-flash` (또는 `gemini-3.5-flash`)를 지정해 기동합니다.
 
 ### [태스크 2] 에이전트 빌드 (`create_agent`)
 *   `langchain.agents` 패키지에서 제공하는 `create_agent` 함수를 활용해 에이전트를 빌드합니다.
 *   시스템 프로필(System Prompt)은 `app/prompts/__init__.py` 내 정의된 기본 챗봇 프롬프트를 수혈하여 동작하게 만듭니다.
 *   도구 리스트(`tools`)는 빈 리스트 `[]`를 바인딩하여 도구 없는 상태로 시작합니다.
 
-### [태스크 3] 에이전트 파일 완성 및 복사
-*   본 미션 폴더 내에 제공된 `harness_agent.py` 파일의 빈 칸을 완성합니다 (첫 단계이므로 도구 `tools = []`, 미들웨어 `middleware = []`로 시작합니다).
-*   완성한 후, 이 파일을 `app/agents/harness_agent.py` 경로로 복사하여 덮어씁니다.
-*   FastAPI 서버와 Streamlit UI를 기동한 뒤, 에이전트 목록에서 `HARNESS_AGENT`를 선택해 대화가 정상 구동되는지 검증합니다.
+### [태스크 3] baseline 에이전트 노트북 검증
+*   `notebooks/missions/mission_01_baseline/skeleton.ipynb` 노트북에서 제공하는 가이드를 채워 기초 에이전트를 빌드합니다.
+*   이 단계는 로컬 노트북 환경 내에서의 대화 구동 테스트가 목표입니다.
+*   **주의**: 프로덕션 서버 이관 및 `app/agents/harness_agent.py` 복사/배포는 최종 통합 단계인 **미션 06 (Agent Assembly)**에서 본격적으로 수행하므로, 미션 01~05에서는 노트북 실습에 집중합니다.
 
 ---
 
