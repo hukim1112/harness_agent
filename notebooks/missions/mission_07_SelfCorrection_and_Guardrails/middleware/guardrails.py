@@ -1,6 +1,6 @@
 import os
 import json
-from langchain.agents.middleware import AgentMiddleware, before_model, wrap_model_call
+from langchain.agents.middleware import AgentMiddleware, before_model, wrap_model_call, ModelResponse
 from langchain_core.messages import AIMessage
 from app.utils import get_llm
 from langchain_core.prompts import ChatPromptTemplate
@@ -53,11 +53,11 @@ class InputSafetyGuardrail(AgentMiddleware):
         
         if "unsafe" in judgment:
             print(f"🛡️ [InputSafetyGuardrail] 차단됨: {judgment}")
-            return {
-                "messages": [
+            return ModelResponse(
+                result=[
                     AIMessage(content=f"🛡️ [Safety Guard Blocked] 입력된 질문에 보안 정책 위배({judgment}) 우려가 있어 처리할 수 없습니다.")
                 ]
-            }
+            )
         
         return handler(request)
 
@@ -101,11 +101,11 @@ class TopicAlignmentGuardrail(AgentMiddleware):
         
         if "off_topic" in intent_result:
             print(f"🛑 [TopicAlignmentGuardrail] 차단됨: 비즈니스 이탈 화제 감지")
-            return {
-                "messages": [
+            return ModelResponse(
+                result=[
                     AIMessage(content="🛑 [Topic Guard Blocked]: 저희는 당사의 서비스 범위에 최적화된 에이전트입니다. 타사 제품이나 외부 어시스턴트에 대한 성능 평가 및 비교 정보는 제공하지 않습니다.")
                 ]
-            }
+            )
             
         return handler(request)
 
@@ -120,11 +120,12 @@ class OutputSchemaRepairGuardrail(AgentMiddleware):
         
     def wrap_model_call(self, request, handler):
         response = handler(request)
+        
         raw_content = ""
-        if hasattr(response, "content"):
+        if hasattr(response, "result") and response.result:
+            raw_content = response.result[-1].content
+        elif hasattr(response, "content"):
             raw_content = response.content
-        elif isinstance(response, dict) and "messages" in response:
-            raw_content = response["messages"][-1].content
             
         raw_content = normalize_content(raw_content)
         try:
@@ -163,10 +164,10 @@ class OutputSchemaRepairGuardrail(AgentMiddleware):
                     self.parser.parse(repaired_raw)
                     print(f"✅ [OutputSchemaRepairGuardrail] 스키마 자가 교정 성공! (시도: {attempt+1}/{self.max_retry})")
                     
-                    if hasattr(response, "content"):
+                    if hasattr(response, "result") and response.result:
+                        response.result[-1].content = repaired_raw
+                    elif hasattr(response, "content"):
                         response.content = repaired_raw
-                    elif isinstance(response, dict) and "messages" in response:
-                        response["messages"][-1].content = repaired_raw
                     return response
                 except Exception as retry_err:
                     parse_error = retry_err
