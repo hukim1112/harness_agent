@@ -132,6 +132,6 @@ def build_harness_agent_prompt(request: ModelRequest) -> str:
     return pm.build_system_prompt(dynamic_state)
 
 
-# 2. 🌟 @dynamic_prompt 데코레이터가 적용된 프로덕션 규격 미들웨어 객체
-harness_agent_prompt_middleware = dynamic_prompt(build_harness_agent_prompt)
+# 2. 원본 동적 프롬프트 조립 함수 (데코레이터가 없어 노트북에서 직접 호출하여 테스트 가능)
+build_harness_agent_prompt_fn = build_harness_agent_prompt
 
