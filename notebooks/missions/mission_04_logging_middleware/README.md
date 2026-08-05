@@ -23,13 +23,13 @@
 *   **완료 지점 (`after_agent`):**
     *   로깅이 켜진 경우, `before_agent`에서 저장했던 시작 시각을 읽어 소요 시간(Latency)을 밀리초(ms) 단위로 계산합니다.
     *   에이전트가 거쳐간 최종 답변 및 전체 대화 메세지 이력을 파싱합니다.
-    *   지정된 로그 파일 경로(`self.log_path`)에 JSON 라인(`jsonl`) 형태로 감사 로그를 한 줄씩 덧붙여 기록(`_append_log`)합니다.
+    *   `session_id`를 구한 뒤, 지정된 감사 로그 디렉토리(`self.log_dir`) 하위에 `{session_id}.jsonl` 파일 명으로 감사 로그를 한 줄씩 덧붙여 기록(`_append_log`)합니다.
 *   **도구 격발 시점 (`wrap_tool_call`):**
-    *   도구 호출이 발생하기 전과 완료된 후의 시각을 재어 각 도구별 수행 시간을 구하고 감사 로그에 함께 기록합니다.
+    *   도구 호출이 발생하기 전과 완료된 후의 시각을 재어 각 도구별 수행 시간을 구하고, `session_id`에 상응하는 `{session_id}.jsonl` 파일에 실시간 기록합니다.
 
 ### [태스크 2] 서버/에이전트에 미들웨어 연결
 *   본 폴더에서 `logging_middleware.py` 파일을 완성한 후, 해당 파일을 `app/middleware/logging_middleware.py` 경로로 복사하여 덮어씁니다 (기존 솔루션 코드를 대체하여 교육생 본인의 코드로 테스트합니다).
-*   `app/agents/harness_agent.py`에서 `LoggingMiddleware`가 해당 모듈로부터 정상 주입되고 있고, Streamlit UI 상에서 로깅 스위치를 켰을 때 감사 로그가 `./artifacts/agent_audit_trail.json` 파일에 실시간 적재되는지 검증합니다.
+*   `app/agents/harness_agent.py`에서 `LoggingMiddleware`가 해당 모듈로부터 정상 주입되고 있고, Streamlit UI 상에서 로깅 스위치를 켰을 때 감사 로그가 `./artifacts/logs/{session_id}.jsonl` 파일에 세션별로 분할 적재되는지 검증합니다.
 
 ---
 

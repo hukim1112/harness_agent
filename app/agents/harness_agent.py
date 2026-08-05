@@ -20,7 +20,7 @@ def get_agent_executor():
     tools = tools_chatbot
     
     # 4. 실시간 수명 주기 로깅 미들웨어 주입
-    logging_middleware = LoggingMiddleware(log_path="./artifacts/agent_audit_trail.json")
+    logging_middleware = LoggingMiddleware(log_dir="./artifacts/logs")
     middleware = [logging_middleware]
     
     # 5. 에이전트 구축

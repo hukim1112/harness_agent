@@ -5,9 +5,9 @@ from typing import Any, Dict
 from langchain.agents.middleware import AgentMiddleware
 
 class LoggingMiddleware(AgentMiddleware):
-    def __init__(self, log_path="./artifacts/agent_audit_trail.json"):
-        self.log_path = log_path
-        os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+    def __init__(self, log_dir="./artifacts/logs"):
+        self.log_dir = log_dir
+        os.makedirs(self.log_dir, exist_ok=True)
         # TODO: 런타임별(요청별) 고유 정보를 격리 저장할 스레드/비동기 세이프한 저장소 생성
         # self._active_runs = {}
 
@@ -27,7 +27,7 @@ class LoggingMiddleware(AgentMiddleware):
         1. active_runs에서 해당 runtime 객체의 기록(시작 시간, 질문)을 pop합니다.
         2. 현재 시각과의 차이를 계산하여 duration_ms를 구합니다.
         3. 에이전트의 최종 답변 및 전체 대화 궤적(Dialogue History)을 추출합니다.
-        4. _append_log를 호출하여 감사 로그를 JSON라인 형태로 파일 적재합니다.
+        4. session_id를 구하고, _append_log를 호출하여 감사 로그를 세션별 JSON라인 형태로 파일 적재합니다.
         """
         # logging_enabled = getattr(runtime.context, "logging_enabled", False) if runtime and runtime.context else False
         return None
@@ -36,12 +36,12 @@ class LoggingMiddleware(AgentMiddleware):
         """
         [TODO: Mission 04] 개별 도구(Tool Call) 격발의 시작과 완료를 감싸서 로깅합니다.
         1. 도구 실행(handler(request)) 전후의 수행 시간을 구합니다.
-        2. 각 도구별 수행 시간을 감사 로그 파일에 기록하고, 실행 결과(response)를 그대로 반환합니다.
+        2. session_id를 구하고, 각 도구별 수행 시간을 세션 감사 로그 파일에 기록하며, 실행 결과(response)를 그대로 반환합니다.
         """
         # logging_enabled = getattr(request.runtime.context, "logging_enabled", False) if request.runtime and request.runtime.context else False
         return handler(request)
 
-    def _append_log(self, log_data):
-        """감사 로그 지정 경로에 JSON 추가 적재"""
-        with open(self.log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
+    def _append_log(self, session_id, log_data):
+        """[TODO: Mission 04] 감사 로그 지정 디렉토리 내에 세션별 JSON라인 파일로 적재"""
+        # log_file = os.path.join(self.log_dir, f"{session_id}.jsonl")
+        pass

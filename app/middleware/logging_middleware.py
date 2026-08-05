@@ -5,9 +5,9 @@ from typing import Any, Dict
 from langchain.agents.middleware import AgentMiddleware
 
 class LoggingMiddleware(AgentMiddleware):
-    def __init__(self, log_path="./artifacts/agent_audit_trail.json"):
-        self.log_path = log_path
-        os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+    def __init__(self, log_dir="./artifacts/logs"):
+        self.log_dir = log_dir
+        os.makedirs(self.log_dir, exist_ok=True)
         # Store run-specific details indexed by the unique id of the runtime object
         self._active_runs = {}
 
@@ -70,7 +70,7 @@ class LoggingMiddleware(AgentMiddleware):
             "status": "SUCCESS" if messages else "FAILED",
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }
-        self._append_log(audit_log)
+        self._append_log(session_id, audit_log)
         return None
 
     def wrap_tool_call(self, request, handler):
@@ -103,10 +103,11 @@ class LoggingMiddleware(AgentMiddleware):
             "latency_ms": duration_ms,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }
-        self._append_log(tool_log)
+        self._append_log(session_id, tool_log)
         return response
 
-    def _append_log(self, log_data):
-        """감사 로그 지정 경로에 JSON 추가 적재"""
-        with open(self.log_path, "a", encoding="utf-8") as f:
+    def _append_log(self, session_id, log_data):
+        """감사 로그 지정 경로에 세션별 JSON라인 파일로 적재"""
+        log_file = os.path.join(self.log_dir, f"{session_id}.jsonl")
+        with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
