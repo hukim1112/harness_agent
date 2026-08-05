@@ -6,11 +6,11 @@ from app.prompts import CHATBOT_SYSTEM_PROMPT
 from app.tools import tools_chatbot
 from app.utils.context import AgentContext
 from app.middleware.logging_middleware import LoggingMiddleware
-from app.prompts import harness_agent_prompt_middleware
 
 # 미들웨어 추가 임포트
 from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
 from app.middleware.self_correction_middleware import tool_call_limit_middleware, smart_context_indexer
+from app.middleware.prompt_middleware import harness_agent_prompt_middleware
 
 def get_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용
