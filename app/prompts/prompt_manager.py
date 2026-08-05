@@ -24,6 +24,9 @@ class PromptManager:
         # Static Reference Context (Stored above boundary to enable caching benchmark)
         self.static_reference = ""
         
+        # Skills context (Loaded from Skills.md)
+        self.skills_context = self._load_file("Skills.md", "No public skills registered.")
+        
         # L5: Dynamic Context (Dynamic info, e.g. memories, status, etc.)
         self.l5_dynamic_context = "No dynamic context provided."
 
@@ -67,6 +70,7 @@ class PromptManager:
         full_prompt = (
             f"=== ROLE (L1) ===\n{self.l1_role}\n\n"
             f"=== OPERATING GUIDELINES (L2) ===\n{self.l2_guidelines}\n\n"
+            f"=== PUBLIC SKILLS CATALOG ===\n{self.skills_context}\n\n"
             f"=== TOOLS SPECS (L3) ===\n{self.l3_tools}\n\n"
             f"=== STATIC REFERENCE CONTEXT ===\n{self.static_reference}\n\n"
             f"{self.boundary_marker}\n\n"
