@@ -3,7 +3,7 @@ from typing import Optional
 from langchain.chat_models import init_chat_model
 
 def get_llm(
-    model_name: str = "gemini-2.5-pro",
+    model_name: str = "gemini-3.5-flash",
     model_provider: Optional[str] = None,
     temperature: float = 0.1,
     **kwargs

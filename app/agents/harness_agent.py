@@ -9,7 +9,7 @@ from app.middleware.logging_middleware import LoggingMiddleware
 
 def get_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용 (openai: 접두사로 공급자 강제 매칭)
-    llm = get_llm(model_name="openai:gpt-4o", temperature=0.0)
+    llm = get_llm(model_name="google_vertexai:gemini-3.5-flash", temperature=0.0)
     
     # 2. SQLite 기반의 L1 영속 체크포인터 메모리 구축
     # 멀티 스레드 충돌 방지를 위해 check_same_thread=False 지정

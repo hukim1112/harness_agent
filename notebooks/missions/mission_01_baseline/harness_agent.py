@@ -11,7 +11,7 @@ from app.utils.context import AgentContext
 
 def get_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용 (openai: 접두사로 공급자 강제 매칭)
-    llm = get_llm(model_name="openai:gpt-4o", temperature=0.0)
+    llm = get_llm(model_name="google_vertexai:gemini-3.5-flash", temperature=0.0)
     
     # TODO: Mission 02 - 임시 MemorySaver 대신 SqliteSaver로 영속 체크포인터 구축하기
     memory = MemorySaver()
