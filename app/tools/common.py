@@ -366,10 +366,15 @@ def web_search(query: str) -> str:
     Uses duckduckgo_search library to bypass captcha verification and get live results.
     """
     try:
-        from duckduckgo_search import DDGS
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            from duckduckgo_search import DDGS
         results = []
-        with DDGS() as ddgs:
-            search_results = list(ddgs.text(query, max_results=5))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            with DDGS() as ddgs:
+                search_results = list(ddgs.text(query, max_results=5))
             for idx, r in enumerate(search_results):
                 clean_title = r.get("title", "Result").strip()
                 clean_snippet = r.get("body", "").strip()
