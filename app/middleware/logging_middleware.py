@@ -139,6 +139,40 @@ class LoggingMiddleware(AgentMiddleware):
         self._append_log(session_id, tool_log)
         return response
 
+    async def awrap_tool_call(self, request, handler):
+        """개별 도구(Tool Call) 격발의 시작과 완료를 감싸서 비동기 로깅"""
+        logging_enabled = getattr(request.runtime.context, "logging_enabled", False) if request.runtime and request.runtime.context else False
+        if not logging_enabled:
+            return await handler(request)
+
+        tool_name = request.tool_call.get("name", "unknown_tool")
+        tool_args = request.tool_call.get("args", {})
+        start_time = time.time()
+        
+        print(f"🔧 [LoggingMiddleware] ➡️ 도구 격발 시작: {tool_name}({tool_args})")
+        
+        # 도구 실행 수행
+        response = await handler(request)
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        print(f"🔧 [LoggingMiddleware] ⬅️ 도구 격발 완료: {tool_name} (소요: {duration_ms}ms)")
+        
+        session_id = self._get_session_id(request.runtime, request=request)
+        if request.runtime and request.runtime.context:
+            request.runtime.context.session_id = session_id
+            
+        tool_log = {
+            "event": "tool_execution",
+            "session_id": session_id,
+            "tool_name": tool_name,
+            "arguments": tool_args,
+            "result": str(response),
+            "latency_ms": duration_ms,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        }
+        self._append_log(session_id, tool_log)
+        return response
+
     def _append_log(self, session_id, log_data):
         """감사 로그 지정 경로에 세션별 JSON라인 파일로 적재"""
         log_file = os.path.join(self.log_dir, f"{session_id}.jsonl")
