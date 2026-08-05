@@ -137,6 +137,20 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
                             yield f"data: {json.dumps({'type': 'token', 'content': normalized})}\n\n"
 
             # 어시스턴트 최종 답변 DB 기록
+            if not full_response and config:
+                try:
+                    state = await agent_executor.aget_state(config)
+                    messages = state.values.get("messages", []) if state else []
+                    if messages:
+                        last_msg = messages[-1]
+                        from langchain_core.messages import AIMessage
+                        if isinstance(last_msg, AIMessage) or getattr(last_msg, "type", None) == "ai":
+                            full_response = sanitize_text(normalize_content(last_msg.content))
+                            if full_response:
+                                yield f"data: {json.dumps({'type': 'token', 'content': full_response})}\n\n"
+                except Exception as get_state_err:
+                    logger.error(f"Error getting final state: {get_state_err}")
+
             if input_data.thread_id and full_response:
                 add_message(input_data.thread_id, "assistant", full_response)
 
