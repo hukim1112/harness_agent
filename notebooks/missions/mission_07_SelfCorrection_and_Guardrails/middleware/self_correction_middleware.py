@@ -15,11 +15,7 @@ from langchain.agents.middleware import (
 from langgraph.runtime import Runtime
 from app.utils import get_llm
 from langchain_core.prompts import ChatPromptTemplate
-
-def clean_content(content) -> str:
-    if isinstance(content, list):
-        return "".join([block.get("text", "") if isinstance(block, dict) else str(block) for block in content])
-    return str(content)
+from app.utils.message_utils import normalize_content
 
 # 1. Summarization & Model call limit (Built-in)
 summarize_middleware = SummarizationMiddleware
@@ -144,7 +140,7 @@ def smart_context_indexer(state: AgentState, runtime: Runtime) -> dict[str, Any]
                     
                     chain = prompt | llm
                     toc_index_raw = chain.invoke({"text": original_content[:60000]}).content
-                    toc_index = clean_content(toc_index_raw).strip()
+                    toc_index = normalize_content(toc_index_raw).strip()
                     
                     compacted_content = (
                         f"[SYSTEM WARNING: 본문이 너무 길어 미들웨어에 의해 시맨틱 인덱싱 처리되었습니다. "
@@ -171,7 +167,7 @@ def smart_context_indexer(state: AgentState, runtime: Runtime) -> dict[str, Any]
                     
                     chain = prompt | llm
                     summary_raw = chain.invoke({"text": original_content[:60000]}).content
-                    summary = clean_content(summary_raw).strip()
+                    summary = normalize_content(summary_raw).strip()
                     
                     compacted_content = (
                         f"[SYSTEM WARNING: 검색 결과가 너무 길어 핵심 정보 위주로 압축 요약되었습니다.]\n\n"

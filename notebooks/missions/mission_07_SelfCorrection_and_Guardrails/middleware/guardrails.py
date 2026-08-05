@@ -5,11 +5,7 @@ from langchain_core.messages import AIMessage
 from app.utils import get_llm
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-
-def clean_content(content) -> str:
-    if isinstance(content, list):
-        return "".join([block.get("text", "") if isinstance(block, dict) else str(block) for block in content])
-    return str(content)
+from app.utils.message_utils import normalize_content
 
 class InputSafetyGuardrail(AgentMiddleware):
     """입력 유해 규정 검사 보안 필터 미들웨어 (Llama Guard 아키텍처 계승)"""
@@ -29,7 +25,7 @@ class InputSafetyGuardrail(AgentMiddleware):
             return handler(request)
             
         user_query = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
-        user_query = clean_content(user_query)
+        user_query = normalize_content(user_query)
         
         # 유해 규정 심사 가이드라인 정의
         system_prompt = """
@@ -53,7 +49,7 @@ class InputSafetyGuardrail(AgentMiddleware):
         
         chain = prompt | self.llm
         judgment_raw = chain.invoke({"text": user_query}).content
-        judgment = clean_content(judgment_raw).strip()
+        judgment = normalize_content(judgment_raw).strip()
         
         if "unsafe" in judgment:
             print(f"🛡️ [InputSafetyGuardrail] 차단됨: {judgment}")
@@ -84,7 +80,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
             return handler(request)
             
         user_query = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
-        user_query = clean_content(user_query)
+        user_query = normalize_content(user_query)
         
         # 주제 이탈 감지 라우팅 프롬프트
         intent_prompt = ChatPromptTemplate.from_messages([
@@ -101,7 +97,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
         
         intent_chain = intent_prompt | self.llm
         intent_result_raw = intent_chain.invoke({"text": user_query}).content
-        intent_result = clean_content(intent_result_raw).strip().lower()
+        intent_result = normalize_content(intent_result_raw).strip().lower()
         
         if "off_topic" in intent_result:
             print(f"🛑 [TopicAlignmentGuardrail] 차단됨: 비즈니스 이탈 화제 감지")
@@ -130,7 +126,7 @@ class OutputSchemaRepairGuardrail(AgentMiddleware):
         elif isinstance(response, dict) and "messages" in response:
             raw_content = response["messages"][-1].content
             
-        raw_content = clean_content(raw_content)
+        raw_content = normalize_content(raw_content)
         try:
             self.parser.parse(raw_content)
             return response
@@ -161,7 +157,7 @@ class OutputSchemaRepairGuardrail(AgentMiddleware):
                         "format_instructions": format_instructions,
                         "bad_content": raw_content
                     }).content
-                    repaired_raw = clean_content(repaired_raw_raw).strip()
+                    repaired_raw = normalize_content(repaired_raw_raw).strip()
                     
                     # 수선된 내용 검증
                     self.parser.parse(repaired_raw)
