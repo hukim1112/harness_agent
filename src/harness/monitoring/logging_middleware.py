@@ -1,83 +1,45 @@
 import os
 import time
 import json
+from typing import Any, Dict
 from langchain.agents.middleware import AgentMiddleware
 
 class LoggingMiddleware(AgentMiddleware):
     def __init__(self, log_path="./artifacts/agent_audit_trail.json"):
         self.log_path = log_path
-        # 로그 파일이 저장될 부모 디렉토리 자동 생성
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+        # TODO: 런타임별(요청별) 고유 정보를 격리 저장할 스레드/비동기 세이프한 저장소 생성
+        # self._active_runs = {}
 
-    def wrap_call(self, request, handler):
-        """에이전트 전체 실행의 시작과 완료를 감싸서 로깅"""
-        start_time = time.time()
-        user_query = request.input_data.get("messages", [])[-1].content
-        
-        print(f"\n🪵 [LoggingMiddleware] === 에이전트 실행 시작 ===")
-        print(f"📥 사용자 질문: {user_query}")
-        
-        # 에이전트 실행 수행 (전체 대화 루프 수행)
-        response = handler(request)
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        print(f"📤 에이전트 실행 완료 (소요: {duration_ms}ms)")
-        
-        # 에이전트 최종 답변 및 전체 대화 궤적 추출
-        agent_response = ""
-        dialogue_history = []
-        if response and "messages" in response:
-            agent_response = response["messages"][-1].content
-            # 전체 메시지 히스토리 조립 (role과 content 추출)
-            for msg in response["messages"]:
-                dialogue_history.append({
-                    "role": msg.type, # 'human', 'ai', 'tool' 등
-                    "content": str(msg.content)
-                })
-        
-        # 에이전트 감사 로그 생성 및 파일 적재 (대화 히스토리 및 최종 답변 동봉!)
-        audit_log = {
-            "event": "agent_execution",
-            "session_id": request.config.get("configurable", {}).get("thread_id", "unknown"),
-            "query": user_query,
-            "response": agent_response,
-            "dialogue_history": dialogue_history,  # <-- 특정 세션 하의 전체 대화 궤적 적재!
-            "latency_ms": duration_ms,
-            "status": "SUCCESS" if response else "FAILED",
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        }
-        self._append_log(audit_log)
-        return response
+    def before_agent(self, state: Dict[str, Any], runtime: Any) -> Dict[str, Any] | None:
+        """
+        [TODO: Mission 04] 에이전트 전체 실행의 시작을 가로채(Intercept) 로깅합니다.
+        1. runtime.context.logging_enabled 가 활성화되어 있는지 확인합니다.
+        2. 시작 시간과 사용자 질문 쿼리를 기록(active_runs에 저장)합니다.
+        3. 콘솔에 시작 로그를 이쁘게 출력합니다.
+        """
+        # logging_enabled = getattr(runtime.context, "logging_enabled", False) if runtime and runtime.context else False
+        return None
+
+    def after_agent(self, state: Dict[str, Any], runtime: Any) -> Dict[str, Any] | None:
+        """
+        [TODO: Mission 04] 에이전트 전체 실행의 완료 시점을 가로채 소요 시간(Latency)을 측정하고 감사 로그를 적재합니다.
+        1. active_runs에서 해당 runtime 객체의 기록(시작 시간, 질문)을 pop합니다.
+        2. 현재 시각과의 차이를 계산하여 duration_ms를 구합니다.
+        3. 에이전트의 최종 답변 및 전체 대화 궤적(Dialogue History)을 추출합니다.
+        4. _append_log를 호출하여 감사 로그를 JSON라인 형태로 파일 적재합니다.
+        """
+        # logging_enabled = getattr(runtime.context, "logging_enabled", False) if runtime and runtime.context else False
+        return None
 
     def wrap_tool_call(self, request, handler):
-        """개별 도구(Tool Call) 격발의 시작과 완료를 감싸서 로깅"""
-        tool_name = request.tool_call.get("name", "unknown_tool")
-        tool_args = request.tool_call.get("args", {})
-        start_time = time.time()
-        
-        print(f"🔧 [LoggingMiddleware] ➡️ 도구 격발 시작: {tool_name}({tool_args})")
-        
-        # 도구 실행 수행
-        response = handler(request)
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        print(f"🔧 [LoggingMiddleware] ⬅️ 도구 격발 완료: {tool_name} (소요: {duration_ms}ms)")
-        
-        # 도구 격발 전용 감사 로그 생성 및 파일 적재
-        session_id = "unknown"
-        if hasattr(request, "runtime") and hasattr(request.runtime, "config"):
-            session_id = request.runtime.config.get("configurable", {}).get("thread_id", "unknown")
-            
-        tool_log = {
-            "event": "tool_execution",
-            "session_id": session_id,
-            "tool_name": tool_name,
-            "arguments": tool_args,
-            "latency_ms": duration_ms,
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        }
-        self._append_log(tool_log)
-        return response
+        """
+        [TODO: Mission 04] 개별 도구(Tool Call) 격발의 시작과 완료를 감싸서 로깅합니다.
+        1. 도구 실행(handler(request)) 전후의 수행 시간을 구합니다.
+        2. 각 도구별 수행 시간을 감사 로그 파일에 기록하고, 실행 결과(response)를 그대로 반환합니다.
+        """
+        # logging_enabled = getattr(request.runtime.context, "logging_enabled", False) if request.runtime and request.runtime.context else False
+        return handler(request)
 
     def _append_log(self, log_data):
         """감사 로그 지정 경로에 JSON 추가 적재"""

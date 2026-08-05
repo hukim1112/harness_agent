@@ -21,7 +21,6 @@ if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
     
     # LangSmith Project Setting (Server Specific)
-    # .env에는 API Key만 있고, 프로젝트명은 여기서 분리합니다.
     os.environ["LANGSMITH_TRACING"] = "true"
     os.environ["LANGSMITH_PROJECT"] = "llmops-agent-server"
     print(f"📈 LangSmith Tracing Enabled. Project: {os.environ['LANGSMITH_PROJECT']}")
@@ -31,7 +30,7 @@ else:
 import logging
 import json
 import traceback
-from typing import AsyncGenerator, Optional, Dict, Any
+from typing import AsyncGenerator, Optional, Dict, Any, List
 
 from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -40,10 +39,21 @@ from pydantic import BaseModel, Field
 import importlib
 from app.agents import AGENT_REGISTRY
 from app.utils.message_utils import sanitize_text, normalize_content
+from app.utils.db import create_session, get_sessions, delete_session, add_message, get_messages
+from app.utils.context import AgentContext
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("LLMOps_Server")
+
+def load_config(file_path: str, default: dict) -> dict:
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading config {file_path}: {e}")
+    return default
 
 # --- Schemas ---
 class UserInput(BaseModel):
@@ -57,6 +67,11 @@ class ChatMessage(BaseModel):
     type: str
     content: str
 
+class SessionCreate(BaseModel):
+    session_id: str
+    agent_name: str
+    title: str
+
 # --- Router Factory ---
 def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRouter:
     """
@@ -69,10 +84,29 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
         try:
             config = {"configurable": {"thread_id": input_data.thread_id}} if input_data.thread_id else {}
             
+            # 런타임에 제어 설정을 동적으로 주입
+            logging_cfg = load_config("./configs/logging.config", {"logging_enabled": False, "log_path": "./artifacts/agent_audit_trail.json"})
+            hitl_cfg = load_config("./configs/hitl.config", {"hitl_enabled": False})
+            
+            context_obj = AgentContext(
+                logging_enabled=logging_cfg.get("logging_enabled", False),
+                log_path=logging_cfg.get("log_path", "./artifacts/agent_audit_trail.json"),
+                response_mode="chat",
+                hitl_enabled=hitl_cfg.get("hitl_enabled", False),
+                debug_mode=os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+            )
+            
+            # 사용자 메시지 DB 기록
+            if input_data.thread_id:
+                add_message(input_data.thread_id, "user", input_data.message)
+            
+            full_response = ""
+            
             # LangGraph astream_events (v2)
             async for event in agent_executor.astream_events(
                 {"messages": [("user", input_data.message)]}, 
                 config=config,
+                context=context_obj,
                 version="v2"
             ):
                 kind = event["event"]
@@ -85,13 +119,11 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
                 # Tool End (결과도 함께 전송)
                 elif kind == "on_tool_end":
                     tool_output = str(event["data"].get("output", ""))
-                    # 긴 출력은 앞부분만 전송 (UI 과부하 방지)
                     truncated = tool_output[:500] + "..." if len(tool_output) > 500 else tool_output
                     yield f"data: {json.dumps({'type': 'tool_end', 'name': event['name'], 'output': sanitize_text(truncated)})}\n\n"
                 
                 # Token Streaming (Chat Model)
                 elif kind == "on_chat_model_stream":
-                    # 내부 로직(예: Self-Query 구성 등)에서 발생하는 중간 단계의 토큰은 제외합니다.
                     tags = event.get("tags", [])
                     if "exclude_from_stream" in tags:
                         continue
@@ -100,7 +132,12 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
                     if chunk and chunk.content:
                         normalized = sanitize_text(normalize_content(chunk.content))
                         if normalized:
+                            full_response += normalized
                             yield f"data: {json.dumps({'type': 'token', 'content': normalized})}\n\n"
+
+            # 어시스턴트 최종 답변 DB 기록
+            if input_data.thread_id and full_response:
+                add_message(input_data.thread_id, "assistant", full_response)
 
         except Exception as e:
             logger.error(f"Stream error in {prefix}: {e}")
@@ -113,14 +150,35 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
         try:
             config = {"configurable": {"thread_id": input_data.thread_id}} if input_data.thread_id else {}
             
+            # 런타임 제어 설정 생성
+            logging_cfg = load_config("./configs/logging.config", {"logging_enabled": False, "log_path": "./artifacts/agent_audit_trail.json"})
+            hitl_cfg = load_config("./configs/hitl.config", {"hitl_enabled": False})
+            
+            context_obj = AgentContext(
+                logging_enabled=logging_cfg.get("logging_enabled", False),
+                log_path=logging_cfg.get("log_path", "./artifacts/agent_audit_trail.json"),
+                response_mode="chat",
+                hitl_enabled=hitl_cfg.get("hitl_enabled", False),
+                debug_mode=os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+            )
+            
+            # 사용자 메시지 DB 기록
+            if input_data.thread_id:
+                add_message(input_data.thread_id, "user", input_data.message)
+                
             # invoke returns the final state
             result = await agent_executor.ainvoke(
                 {"messages": [("user", input_data.message)]},
-                config=config
+                config=config,
+                context=context_obj
             )
-            # LangGraph: State['messages'][-1] is the AI response
             last_message = result["messages"][-1]
             normalized = sanitize_text(normalize_content(last_message.content))
+            
+            # 어시스턴트 답변 DB 기록
+            if input_data.thread_id:
+                add_message(input_data.thread_id, "assistant", normalized)
+                
             return ChatMessage(type="ai", content=normalized)
         except Exception as e:
             logger.error(f"Invocation error in {prefix}: {e}")
@@ -143,6 +201,37 @@ app = FastAPI(
     description="Unified Server for Multiple Agents"
 )
 
+# --- Chat Session API Endpoints ---
+@app.post("/sessions")
+def api_create_session(session: SessionCreate):
+    try:
+        return create_session(session.session_id, session.agent_name, session.title)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions")
+def api_get_sessions(agent_name: Optional[str] = None):
+    try:
+        return get_sessions(agent_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/sessions/{session_id}")
+def api_delete_session(session_id: str):
+    try:
+        delete_session(session_id)
+        return {"status": "success", "deleted_session": session_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions/{session_id}/messages")
+def api_get_messages(session_id: str):
+    try:
+        return get_messages(session_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- Dynamic Agent Registration (Registry 패턴) ---
 loaded_agents = []
 for agent_config in AGENT_REGISTRY:
@@ -153,7 +242,6 @@ for agent_config in AGENT_REGISTRY:
         # 에이전트 실행기(executor) 객체 찾기
         executor = getattr(module, "agent_executor", None)
         if not executor:
-            # create_agent_name 팩토리 함수인 경우 대응
             executor_factory = getattr(module, f"create_{agent_config['name']}_agent", None)
             if executor_factory:
                 executor = executor_factory()

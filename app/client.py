@@ -56,6 +56,46 @@ class AgentClient:
         except requests.exceptions.RequestException as e:
             yield {"type": "error", "error": str(e)}
 
+    def create_session(self, session_id: str, agent_name: str, title: str) -> dict:
+        url = f"{self.base_url}/sessions"
+        payload = {"session_id": session_id, "agent_name": agent_name, "title": title}
+        try:
+            response = requests.post(url, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            return {"type": "error", "error": str(e)}
+
+    def get_sessions(self, agent_name: str = None) -> list:
+        url = f"{self.base_url}/sessions"
+        params = {"agent_name": agent_name} if agent_name else {}
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching sessions: {e}")
+            return []
+
+    def delete_session(self, session_id: str) -> dict:
+        url = f"{self.base_url}/sessions/{session_id}"
+        try:
+            response = requests.delete(url)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            return {"type": "error", "error": str(e)}
+
+    def get_messages(self, session_id: str) -> list:
+        url = f"{self.base_url}/sessions/{session_id}/messages"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching messages: {e}")
+            return []
+
 # --- Interactive Test Loop ---
 if __name__ == "__main__":
     client = AgentClient()
