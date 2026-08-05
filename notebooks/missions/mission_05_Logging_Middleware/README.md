@@ -1,4 +1,4 @@
-# 🪵 Mission 04: Logging Middleware
+# 🪵 Mission 05: Logging Middleware
 
 ## 1. 개요 (Overview)
 실무에서 배포된 에이전트가 오작동하거나 속도가 느려질 때, 그 내부 추론 궤적(Trajectory)과 도구 호출(Tool Call)의 상세 지연 시간(Latency)을 투명하게 관측할 수 있어야 합니다. 본 미션의 목표는 에이전트 실행 수명 주기(Lifecycle)를 가로채는 **`AgentMiddleware`**를 구현하여 실시간 로깅 및 감사 추적(Audit Trail) 파이프라인을 구축하는 것입니다.
@@ -34,4 +34,4 @@
 ---
 
 ## 4. 실습 코드 가이드 (Jupyter Notebook Skeleton)
-`notebooks/missions/mission_04_logging_middleware/skeleton.ipynb` 노트북 파일 내 빈 칸들을 채워 수명 주기 감사 미들웨어를 정상 작동시키세요.
+`notebooks/missions/mission_05_Logging_Middleware/skeleton.ipynb` 노트북 파일 내 빈 칸들을 채워 수명 주기 감사 미들웨어를 정상 작동시키세요.

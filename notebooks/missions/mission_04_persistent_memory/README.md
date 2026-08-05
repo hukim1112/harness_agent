@@ -1,7 +1,7 @@
-# 💾 Mission 02: SQLite Checkpointer (Episodic Memory L1)
+# 💾 Mission 04: persistent_memory (Working Memory L1)
 
 ## 1. 개요 (Overview)
-기본적인 LangChain 에이전트는 대화 기록을 RAM 메모리(`MemorySaver`)에 저장합니다. 이 경우 애플리케이션이나 서버가 재부팅되면 모든 대화 역사(체크포인트)가 유실됩니다. 본 미션의 목표는 LangGraph의 **`SqliteSaver`**를 사용하여 대화의 1차 영속 메모리(L1 Episodic Memory)를 구축하고 데이터베이스 기반의 영구 세션 관리 기능을 에이전트에 통합하는 것입니다.
+기본적인 LangChain 에이전트는 대화 기록을 RAM 메모리(`MemorySaver`)에 저장합니다. 이 경우 애플리케이션이나 서버가 재부팅되면 모든 대화 역사(체크포인트)가 유실됩니다. 본 미션의 목표는 LangGraph의 **`SqliteSaver`**를 사용하여 대화의 영속 메모리(Persistent Working Memory)를 구축하고 데이터베이스 기반의 영구 세션 관리 기능을 에이전트에 통합하는 것입니다.
 
 ---
 
@@ -30,4 +30,4 @@
 ---
 
 ## 4. 실습 코드 가이드 (Jupyter Notebook Skeleton)
-`notebooks/missions/mission_02_sqlite_checkpointer/skeleton.ipynb` 노트북 내의 빈 칸을 완성해 나가며 영속화 테스트를 성공적으로 완수하세요.
+`notebooks/missions/mission_04_persistent_memory/skeleton.ipynb` 노트북 내의 빈 칸을 완성해 나가며 영속화 테스트를 성공적으로 완수하세요.

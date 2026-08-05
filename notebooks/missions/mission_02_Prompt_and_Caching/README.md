@@ -1,4 +1,4 @@
-# 🗂️ Mission 05: Multi-layered Prompt & Cache
+# 🗂️ Mission 02: Multi-layered Prompt & Cache
 
 ## 1. 개요 (Overview)
 에이전트가 복잡한 업무를 장기적으로 수행할 때, 시스템 프롬프트(System Instruction)와 컨텍스트(Dialogue History, Tools Specs)의 크기가 급격히 커지게 됩니다. 이는 LLM 호출 마다 막대한 토큰 비용과 지연 시간(Latency)을 초래합니다. 본 미션의 목표는 시스템 프롬프트를 계층별(L1~L5)로 나누어 모듈화하여 관리하는 **`PromptManager`**를 구현하고, Vertex AI / Gemini 환경에서 제공하는 **프롬프트 캐싱(Prompt Caching / Context Caching)** 기술을 접목하여 운영 비용과 속도를 극적으로 최적화하는 아키텍처를 실습하는 것입니다.
@@ -34,4 +34,4 @@
 ---
 
 ## 4. 실습 코드 가이드 (Jupyter Notebook Skeleton)
-`notebooks/missions/mission_05_prompt_caching/skeleton.ipynb` 노트북 파일 내 빈 칸들을 채워 프롬프트 빌더 및 캐싱 로직을 완성하세요.
+`notebooks/missions/mission_02_Prompt_and_Caching/skeleton.ipynb` 노트북 파일 내 빈 칸들을 채워 프롬프트 빌더 및 캐싱 로직을 완성하세요.
