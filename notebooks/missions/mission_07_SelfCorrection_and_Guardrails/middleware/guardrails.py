@@ -164,7 +164,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
         
         # 주제 이탈 감지 라우팅 프롬프트
         intent_prompt = ChatPromptTemplate.from_messages([
-            ("system", """당신은 사용자의 질문이 당사 서비스 영역(금융인증서, 일반 업무, 일반 상식)을 
+            ("system", """당신은 사용자의 질문이 당사 서비스 영역(금융인증서, 일반 업무, 일반 상식, 소프트웨어 프로그래밍, 파일 시스템 조작, 도구 및 스킬 개발)을 
             벗어나는지 판별하는 시맨틱 가드레일 라우터입니다.
             
             특히 아래 주제에 해당하는 경우 무조건 'off_topic'으로 분류하세요:
@@ -214,7 +214,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
         user_query = normalize_content(user_query)
         
         intent_prompt = ChatPromptTemplate.from_messages([
-            ("system", """당신은 사용자의 질문이 당사 서비스 영역(금융인증서, 일반 업무, 일반 상식)을 
+            ("system", """당신은 사용자의 질문이 당사 서비스 영역(금융인증서, 일반 업무, 일반 상식, 소프트웨어 프로그래밍, 파일 시스템 조작, 도구 및 스킬 개발)을 
             벗어나는지 판별하는 시맨틱 가드레일 라우터입니다.
             
             특히 아래 주제에 해당하는 경우 무조건 'off_topic'으로 분류하세요:

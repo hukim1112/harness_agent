@@ -26,8 +26,8 @@ def get_agent_executor():
     logging_middleware = LoggingMiddleware(log_dir="./artifacts/logs")
     middleware = [
         logging_middleware,
-        # InputSafetyGuardrail(),
-        # TopicAlignmentGuardrail(),
+        InputSafetyGuardrail(),
+        TopicAlignmentGuardrail(),
         smart_context_indexer,
         tool_call_limit_middleware,
         harness_agent_prompt_middleware
