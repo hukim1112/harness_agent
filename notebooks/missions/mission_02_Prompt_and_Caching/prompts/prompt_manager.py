@@ -76,17 +76,11 @@ class PromptManager:
         return full_prompt
 
 
-# 🌟 @dynamic_prompt 데코레이터가 적용된 프로덕션 규격 미들웨어 정의
-@dynamic_prompt
-def harness_agent_prompt_middleware(request: ModelRequest) -> str:
-    """
-    Harness Agent를 위한 dynamic_prompt 미들웨어.
-    에이전트 실행 직전에 호출되어, runtime.context 및 request.tools를
-    결합한 최종 5계층 시스템 프롬프트를 빌드하여 반환합니다.
-    """
+# 1. 원본 동적 프롬프트 조립 함수 (데코레이터가 없어 노트북에서 직접 호출하여 테스트 가능)
+def build_harness_agent_prompt(request: ModelRequest) -> str:
     ctx = request.runtime.context
     
-    # 1. runtime.context로부터 권한/환경 정보 획득 (L4)
+    # runtime.context로부터 권한/환경 정보 획득 (L4)
     user_permission = getattr(ctx, "user_permission", "GUEST")
     active_project = getattr(ctx, "active_project", "UNKNOWN")
     
@@ -95,19 +89,21 @@ def harness_agent_prompt_middleware(request: ModelRequest) -> str:
         "active_project": active_project
     }
     
-    # 2. 파일들(PROMPT.md, AGENT.md)을 읽어오는 PromptManager 인스턴스화
-    # (__file__ 기준으로 정확하게 prompts 디렉토리를 바인딩합니다)
+    # 파일들(PROMPT.md, AGENT.md)을 읽어오는 PromptManager 인스턴스화
     prompt_dir = os.path.dirname(os.path.abspath(__file__))
     pm = PromptManager(prompt_dir=prompt_dir)
     
-    # 3. 도구 규격 동적 반영 (L3)
+    # 도구 규격 동적 반영 (L3)
     if hasattr(request, "tools") and request.tools:
         pm.build_tool_specifications(request.tools)
         
-    # 4. 정적/동적 참고자료나 메모리 바인딩 (L5)
-    # (추후 SQLite 에피소드 메모리 복원 시 여기에 텍스트를 주입합니다)
+    # 정적/동적 참고자료나 메모리 바인딩 (L5)
     recalled_memory = getattr(ctx, "recalled_memory", "No dynamic context provided.")
     pm.set_dynamic_context(recalled_memory)
     
-    # 5. 완성된 시스템 프롬프트 조립 및 반환
     return pm.build_system_prompt(dynamic_state)
+
+
+# 2. 🌟 @dynamic_prompt 데코레이터가 적용된 프로덕션 규격 미들웨어 객체
+harness_agent_prompt_middleware = dynamic_prompt(build_harness_agent_prompt)
+
