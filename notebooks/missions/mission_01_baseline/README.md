@@ -23,8 +23,10 @@
 *   시스템 프로필(System Prompt)은 `app/prompts/__init__.py` 내 정의된 기본 챗봇 프롬프트를 수혈하여 동작하게 만듭니다.
 *   도구 리스트(`tools`)는 빈 리스트 `[]`를 바인딩하여 도구 없는 상태로 시작합니다.
 
-### [태스크 3] 에이전트 호출 및 스트리밍 검증
-*   구축된 `agent_executor`를 동기 `invoke`와 비동기 `astream_events` 형태로 각각 호출하여 응답이 올바르게 생성되는지 확인합니다.
+### [태스크 3] 에이전트 파일 완성 및 복사
+*   본 미션 폴더 내에 제공된 `harness_agent.py` 파일의 빈 칸을 완성합니다 (첫 단계이므로 도구 `tools = []`, 미들웨어 `middleware = []`로 시작합니다).
+*   완성한 후, 이 파일을 `app/agents/harness_agent.py` 경로로 복사하여 덮어씁니다.
+*   FastAPI 서버와 Streamlit UI를 기동한 뒤, 에이전트 목록에서 `HARNESS_AGENT`를 선택해 대화가 정상 구동되는지 검증합니다.
 
 ---
 
