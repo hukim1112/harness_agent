@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 # 1. Setup Project Root Path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
+sys.path.append(os.path.join(project_root, "src"))
 
 # 2. 환경 변수 로드 (.env 파일 명시적 지정)
 dotenv_path = os.path.join(project_root, ".env")

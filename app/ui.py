@@ -13,35 +13,83 @@ from app.agents import AGENT_REGISTRY
 # --- Page Config ---
 st.set_page_config(page_title="Harness Agent UI", layout="wide")
 
-# --- Premium Custom CSS Styling (Glassmorphism, Dark Mode Theme) ---
+# --- Premium Custom CSS Styling (Modern Electric Blue Theme & Glassmorphism) ---
 st.markdown("""
 <style>
-    /* Main background */
+    /* Main background with deep blue-space gradient */
     .stApp {
-        background-color: #0e1117;
-        color: #ffffff;
+        background: linear-gradient(135deg, #060b16 0%, #0a1224 50%, #060b16 100%);
+        color: #e2e8f0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Sidebar styling */
+    /* Sidebar premium styling */
     section[data-testid="stSidebar"] {
-        background-color: #161b22;
-        border-right: 1px solid #30363d;
+        background-color: #03070f !important;
+        border-right: 1px solid #1e3a8a !important;
     }
     
-    /* Custom header cards */
+    /* Premium Header and info cards */
     .header-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 20px;
-        backdrop-filter: blur(10px);
+        background: linear-gradient(135deg, rgba(30, 58, 138, 0.25) 0%, rgba(59, 130, 246, 0.1) 100%);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 25px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
     }
     
-    /* Status indicators */
+    .header-card h2 {
+        color: #3b82f6 !important;
+        font-weight: 700;
+        margin-top: 0;
+    }
+    
+    .header-card code {
+        background: rgba(59, 130, 246, 0.2);
+        color: #93c5fd;
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    
     .status-text {
-        font-size: 0.85em;
-        color: #8b949e;
+        font-size: 0.9em;
+        color: #94a3b8;
+    }
+    
+    /* Premium button stylings */
+    div.stButton > button {
+        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(59, 130, 246, 0.4) !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        box-shadow: 0 4px 12px rgba(29, 78, 216, 0.15) !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    div.stButton > button:hover {
+        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%) !important;
+        border-color: #60a5fa !important;
+        box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3) !important;
+        transform: translateY(-1px) !important;
+    }
+    
+    /* Secondary (Inactive) room list buttons styling */
+    div.stButton > button[kind="secondary"] {
+        background: rgba(15, 23, 42, 0.6) !important;
+        color: #94a3b8 !important;
+        border: 1px solid rgba(148, 163, 184, 0.15) !important;
+        box-shadow: none !important;
+    }
+    
+    div.stButton > button[kind="secondary"]:hover {
+        background: rgba(30, 41, 59, 0.8) !important;
+        color: #ffffff !important;
+        border-color: rgba(148, 163, 184, 0.4) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -113,7 +161,8 @@ with st.sidebar:
     st.markdown("### 💬 대화방 목록")
     
     # Fetch active sessions for the selected agent
-    sessions = client.get_sessions(agent_name=agent_name)
+    with st.spinner("🔄 에이전트 및 대화 목록 로드 중..."):
+        sessions = client.get_sessions(agent_name=agent_name)
     session_ids = [s["session_id"] for s in sessions]
     
     # If current thread_id is invalid or not selected, select the latest one
@@ -153,7 +202,7 @@ with st.sidebar:
             # Active room styling prefix
             prefix = "📌 " if is_active else "📄 "
             with col1:
-                if st.button(f"{prefix}{s['title']}", key=f"session_{s['session_id']}", use_container_width=True):
+                if st.button(f"{prefix}{s['title']}", key=f"session_{s['session_id']}", use_container_width=True, type="primary" if is_active else "secondary"):
                     st.session_state.thread_id = s["session_id"]
                     db_msgs = client.get_messages(s["session_id"])
                     st.session_state.messages = [{"role": m["role"], "content": m["content"]} for m in db_msgs]
@@ -168,6 +217,9 @@ with st.sidebar:
                         st.session_state.thread_id = None
                         st.session_state.messages = []
                     st.rerun()
+                    
+    st.markdown("---")
+    st.info("💡 **지연 안내**: 에이전트를 다른 종류로 처음 변경할 때는 라이브러리 임포트 및 LLM 바인딩으로 인해 1~2초간 지연이 발생할 수 있습니다. 정상 작동 중이오니 잠시만 기다려 주세요.")
 
 
 # --- Main Chat Interface ---

@@ -8,7 +8,14 @@ AGENT_REGISTRY = [
         "module": "app.agents.chatbot",
         "prefix": "/chatbot",
         "tags": ["Chatbot"],
-        "description": "도구 없이 자연어 대화만 수행하는 범용 AI 어시스턴트"
+        "description": "도구 및 모니터링이 활성화된 기준완성형 챗봇 (서버/UI 테스트용)"
+    },
+    {
+        "name": "harness_agent",
+        "module": "app.agents.harness_agent",
+        "prefix": "/harness_agent",
+        "tags": ["HarnessAgent"],
+        "description": "수강생들이 단계별 실무 미션을 통해 완성해나가는 실습용 에이전트"
     }
 ]
 
