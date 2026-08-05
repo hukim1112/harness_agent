@@ -6,6 +6,7 @@ from app.prompts import CHATBOT_SYSTEM_PROMPT
 from app.tools import tools_chatbot
 from app.utils.context import AgentContext
 from app.middleware.logging_middleware import LoggingMiddleware
+from app.prompts import harness_agent_prompt_middleware
 
 def get_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용 (openai: 접두사로 공급자 강제 매칭)
@@ -19,15 +20,15 @@ def get_agent_executor():
     # 3. 범용 8대 도구(tools_chatbot) 바인딩
     tools = tools_chatbot
     
-    # 4. 실시간 수명 주기 로깅 미들웨어 주입
+    # 4. 실시간 수명 주기 로깅 및 동적 프롬프트 미들웨어 주입
     logging_middleware = LoggingMiddleware(log_dir="./artifacts/logs")
-    middleware = [logging_middleware]
+    middleware = [logging_middleware, harness_agent_prompt_middleware]
     
-    # 5. 에이전트 구축
+    # 5. 에이전트 구축 (system_prompt는 미들웨어가 5계층으로 자동 주입함)
     harness_agent = create_agent(
         model=llm,
         tools=tools,
-        system_prompt=CHATBOT_SYSTEM_PROMPT,
+        system_prompt=None,
         checkpointer=memory,
         middleware=middleware,
         context_schema=AgentContext
