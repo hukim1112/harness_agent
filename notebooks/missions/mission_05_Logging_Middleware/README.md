@@ -27,11 +27,13 @@
 *   **도구 격발 시점 (`wrap_tool_call`):**
     *   도구 호출이 발생하기 전과 완료된 후의 시각을 재어 각 도구별 수행 시간을 구하고, `session_id`에 상응하는 `{session_id}.jsonl` 파일에 실시간 기록합니다.
 
-### [태스크 2] 서버/에이전트에 미들웨어 연결
-*   본 폴더에서 `logging_middleware.py` 파일을 완성한 후, 해당 파일을 `app/middleware/logging_middleware.py` 경로로 복사하여 덮어씁니다 (기존 솔루션 코드를 대체하여 교육생 본인의 코드로 테스트합니다).
-*   `app/agents/harness_agent.py`에서 `LoggingMiddleware`가 해당 모듈로부터 정상 주입되고 있고, Streamlit UI 상에서 로깅 스위치를 켰을 때 감사 로그가 `./artifacts/logs/{session_id}.jsonl` 파일에 세션별로 분할 적재되는지 검증합니다.
+### [태스크 2] 미들웨어 이관 및 노트북 검증
+*   본 폴더에서 완성한 `logging_middleware.py` 파일을 `app/middleware/logging_middleware.py` 경로로 복사하여 프로젝트 시스템 경로에 탑재합니다.
+*   `notebooks/missions/mission_05_Logging_Middleware/skeleton.ipynb` 노트북 내의 단위 테스트 코드를 실행하여, 미들웨어가 에이전트의 실행 수명 주기를 정상적으로 낚아채 감사 로그를 생성하고 지정된 경로에 적재하는지 노트북 상에서 성공적으로 검증합니다.
+*   **주의**: `app/agents/harness_agent.py`와 같은 프로덕션 에이전트에 본 미들웨어를 직접 등록하고, FastAPI 서버 및 Streamlit UI와 실시간으로 연동하여 검증하는 단계는 최종 통합 단계인 **미션 06 (Agent Assembly)**에서 통합 진행하므로, 본 단계에서는 노트북 내 시뮬레이션 검증에 집중합니다.
 
 ---
 
 ## 4. 실습 코드 가이드 (Jupyter Notebook Skeleton)
-`notebooks/missions/mission_05_Logging_Middleware/skeleton.ipynb` 노트북 파일 내 빈 칸들을 채워 수명 주기 감사 미들웨어를 정상 작동시키세요.
+`notebooks/missions/mission_05_Logging_Middleware/skeleton.ipynb` 노트북 파일 내 빈 칸들을 채워 수명 주기 감사 미들웨어를 노트북 상에서 성공적으로 구동시키고 검증을 완료하십시오.
+
