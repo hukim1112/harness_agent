@@ -33,8 +33,16 @@ def tool_call_limit_middleware(state: AgentState, runtime: Runtime) -> dict[str,
     max_tool_limit = 3
     if tool_calls_count >= max_tool_limit:
         print(f"🛑 [Harness Middleware] Tool Call Limit Exceeded (Limit: {max_tool_limit}). Forcing termination.")
-        # runtime API를 사용해 상태 그래프의 최종 end 노드로 강제 워프(Jump)
-        runtime.jump_to("end")
+        from langgraph.types import Command
+        from langchain_core.messages import AIMessage
+        return Command(
+            goto="end",
+            update={
+                "messages": [
+                    AIMessage(content="🛑 [Tool Limit Exceeded] 도구 호출 횟수 제한(3회)을 초과하여 실행을 중단합니다.")
+                ]
+            }
+        )
     return None
 
 
@@ -56,16 +64,21 @@ def dynamic_model_fallback(request: ModelRequest, handler: Callable[[ModelReques
 # 4. Model retry (Custom @wrap_model_call)
 @wrap_model_call
 def retry_on_transient_error(request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]) -> ModelResponse:
-    """API 호출 에러 발생 시 최대 3회 지수 백오프로 자동 복구하는 미들웨어"""
     max_retries = 3
     for attempt in range(max_retries):
         try:
             return handler(request)
         except Exception as error:
             if attempt == max_retries - 1:
-                raise error
+                # 🛑 크래시를 내는 대신 정중한 안내 메시지를 담은 ModelResponse 반환
+                print(f"💥 [Harness Middleware] Connection completely failed after {max_retries} attempts.")
+                from langchain_core.messages import AIMessage
+                return ModelResponse(
+                    result=[
+                        AIMessage(content="🔌 [시스템 안내] 현재 AI 모델과의 실시간 통신 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
+                    ]
+                )
             sleep_time = 2 ** attempt
-            print(f"⚠️ [Harness Middleware] Model Call Failed. Retrying ({attempt+1}/{max_retries}) in {sleep_time}s...")
             time.sleep(sleep_time)
 
 
