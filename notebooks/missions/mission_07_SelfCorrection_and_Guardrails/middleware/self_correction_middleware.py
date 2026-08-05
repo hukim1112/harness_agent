@@ -30,7 +30,7 @@ def tool_call_limit_middleware(state: AgentState, runtime: Runtime) -> dict[str,
     # 궤적 이력 중 ToolMessage(도구 실행 결과)의 개수를 누적 카운트
     tool_calls_count = sum(1 for msg in messages if msg.__class__.__name__ == "ToolMessage")
     
-    max_tool_limit = 3
+    max_tool_limit = 50
     if tool_calls_count >= max_tool_limit:
         print(f"🛑 [Harness Middleware] Tool Call Limit Exceeded (Limit: {max_tool_limit}). Forcing termination.")
         from langgraph.types import Command
@@ -39,47 +39,78 @@ def tool_call_limit_middleware(state: AgentState, runtime: Runtime) -> dict[str,
             goto="end",
             update={
                 "messages": [
-                    AIMessage(content="🛑 [Tool Limit Exceeded] 도구 호출 횟수 제한(3회)을 초과하여 실행을 중단합니다.")
+                    AIMessage(content=f"🛑 [Tool Limit Exceeded] 도구 호출 횟수 제한({max_tool_limit}회)을 초과하여 실행을 중단합니다.")
                 ]
             }
         )
     return None
 
 
-# 3. Model fallback (Custom @wrap_model_call)
-@wrap_model_call
-def dynamic_model_fallback(request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]) -> ModelResponse:
-    """메인 모델 API 호출 실패 시 백업 모델(gemini-2.5-pro)로 강제 스위칭하는 미들웨어"""
-    try:
-        return handler(request)
-    except Exception as error:
-        print(f"🔄 [Harness Middleware] Main Model Call Failed ({error}). Activating Fallback backup model...")
-        # 백업용 안전 모델 로드
-        backup_llm = get_llm(model_name="gemini-2.5-pro", temperature=0.0)
-        # 통신 요청의 타겟 모델을 백업 모델로 대체하여 재호출
-        request.model = backup_llm
-        return handler(request)
-
-
-# 4. Model retry (Custom @wrap_model_call)
-@wrap_model_call
-def retry_on_transient_error(request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]) -> ModelResponse:
-    max_retries = 3
-    for attempt in range(max_retries):
+# 3. Model fallback (Custom AgentMiddleware)
+class DynamicModelFallback(AgentMiddleware):
+    def wrap_model_call(self, request, handler):
+        """메인 모델 API 호출 실패 시 백업 모델(gemini-2.5-pro)로 강제 스위칭하는 미들웨어"""
         try:
             return handler(request)
         except Exception as error:
-            if attempt == max_retries - 1:
-                # 🛑 크래시를 내는 대신 정중한 안내 메시지를 담은 ModelResponse 반환
-                print(f"💥 [Harness Middleware] Connection completely failed after {max_retries} attempts.")
-                from langchain_core.messages import AIMessage
-                return ModelResponse(
-                    result=[
-                        AIMessage(content="🔌 [시스템 안내] 현재 AI 모델과의 실시간 통신 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
-                    ]
-                )
-            sleep_time = 2 ** attempt
-            time.sleep(sleep_time)
+            print(f"🔄 [Harness Middleware] Main Model Call Failed ({error}). Activating Fallback backup model...")
+            # 백업용 안전 모델 로드
+            backup_llm = get_llm(model_name="gemini-2.5-pro", temperature=0.0)
+            # 통신 요청의 타겟 모델을 백업 모델로 대체하여 재호출
+            request.model = backup_llm
+            return handler(request)
+
+    async def awrap_model_call(self, request, handler):
+        try:
+            return await handler(request)
+        except Exception as error:
+            print(f"🔄 [Harness Middleware] Main Model Call Failed ({error}). Activating Fallback backup model...")
+            backup_llm = get_llm(model_name="gemini-2.5-pro", temperature=0.0)
+            request.model = backup_llm
+            return await handler(request)
+
+dynamic_model_fallback = DynamicModelFallback()
+
+
+# 4. Model retry (Custom AgentMiddleware)
+class RetryOnTransientError(AgentMiddleware):
+    def wrap_model_call(self, request, handler):
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return handler(request)
+            except Exception as error:
+                if attempt == max_retries - 1:
+                    # 🛑 크래시를 내는 대신 정중한 안내 메시지를 담은 ModelResponse 반환
+                    print(f"💥 [Harness Middleware] Connection completely failed after {max_retries} attempts.")
+                    from langchain_core.messages import AIMessage
+                    return ModelResponse(
+                        result=[
+                            AIMessage(content="🔌 [시스템 안내] 현재 AI 모델과의 실시간 통신 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
+                        ]
+                    )
+                sleep_time = 2 ** attempt
+                time.sleep(sleep_time)
+
+    async def awrap_model_call(self, request, handler):
+        import asyncio
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return await handler(request)
+            except Exception as error:
+                if attempt == max_retries - 1:
+                    print(f"💥 [Harness Middleware] Connection completely failed after {max_retries} attempts.")
+                    from langchain_core.messages import AIMessage
+                    return ModelResponse(
+                        result=[
+                            AIMessage(content="🔌 [시스템 안내] 현재 AI 모델과의 실시간 통신 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
+                        ]
+                    )
+                sleep_time = 2 ** attempt
+                await asyncio.sleep(sleep_time)
+
+retry_on_transient_error = RetryOnTransientError()
 
 
 # 5. Auto Context Compactor (Custom @before_model)

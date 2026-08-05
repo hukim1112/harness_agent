@@ -1,5 +1,5 @@
 import sqlite3
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langchain.agents import create_agent
 from app.utils import get_llm
 from app.prompts import CHATBOT_SYSTEM_PROMPT
@@ -16,9 +16,8 @@ def get_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용
     llm = get_llm(model_name="gemini-3.5-flash", temperature=0.0)
     
-    # 2. SQLite 기반의 L1 영속 체크포인터 메모리 구축
-    conn = sqlite3.connect("app/database/checkpoints.db", check_same_thread=False)
-    memory = SqliteSaver(conn)
+    # 2. 대화 세션별 체크포인터 메모리 저장소 셋업
+    memory = MemorySaver()
     
     # 3. 범용 8대 도구(tools_chatbot) 바인딩
     tools = tools_chatbot
