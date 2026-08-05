@@ -48,3 +48,10 @@ playwright
 streamlit
 crawl4ai
 duckduckgo_search>=8.1.1
+fastmcp
+langchain-chroma
+pysqlite3-binary
+datasets
+matplotlib
+pandas
+
