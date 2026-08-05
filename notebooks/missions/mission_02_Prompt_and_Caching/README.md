@@ -15,11 +15,15 @@
 ## 3. 미션 가이드 및 요구사항 (Mission Requirements)
 
 ### [태스크 1] 계층화된 `PromptManager` 구현
-*   **L1 (System Role):** 에이전트의 페르소나 및 핵심 정체성 정의
-*   **L2 (Operating Guidelines):** 행동 준수 사항 및 금지 행위 지침
-*   **L3 (Dynamic Tools Spec):** 현재 바인딩된 도구들의 가용 정보와 스펙 명세
-*   **L4 (Context & State):** 사용자 세션 정보 및 워킹 메모리
-*   **L5 (User Input):** 현재 시점의 사용자 질문 및 이전 발화
+*   **L1 (System Role):** 에이전트의 페르소나 및 핵심 정체성 정의 (`PROMPT.md` 기반)
+*   **L2 (Operating Guidelines):** 행동 준수 사항 및 금지 행위 지침 (`AGENT.md` 및 `Skills.md` 기반)
+*   **L3 (Dynamic Tools Spec):** 현재 바인딩된 도구들의 가용 정보와 스펙 명세 (실시간 도구 감지 및 변환)
+*   **L4 (Dynamic Rules & Env):** 동적 실행 환경 및 권한 상태 (사용자 권한, 타겟 프로젝트 정보)
+*   **L5 (Dynamic Context):** 소환된 에피소드 기억 및 동적 워킹 메모리 (Hermes 장기 기억 연동)
+
+> [!NOTE]
+> 대화 이력(Dialogue History)과 현재 사용자 발화(User Input)는 LangChain/LangGraph 아키텍처 상 메세지 객체 리스트(`messages`)로 전달되므로, 시스템 지시문(System Instruction) 문자열 내부가 아닌 LLM 메시지 스택으로 관리됩니다. 따라서 `PromptManager`는 시스템 지시문의 컨텍스트 캐싱 최적화를 위해 위와 같은 L1~L5 구조로 최종 빌드합니다.
+
 
 *   `PromptManager`는 각 계층별 프롬프트 블록을 조합하여 최종 프롬프트를 렌더링해야 합니다.
 
