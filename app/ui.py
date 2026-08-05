@@ -13,83 +13,127 @@ from app.agents import AGENT_REGISTRY
 # --- Page Config ---
 st.set_page_config(page_title="Harness Agent UI", layout="wide")
 
-# --- Premium Custom CSS Styling (Modern Electric Blue Theme & Glassmorphism) ---
+# --- Premium Custom CSS Styling (Bright Light-Blue SaaS Theme) ---
 st.markdown("""
 <style>
-    /* Main background with deep blue-space gradient */
+    /* Main body background: Light Sky Blue */
     .stApp {
-        background: linear-gradient(135deg, #060b16 0%, #0a1224 50%, #060b16 100%);
-        color: #e2e8f0;
+        background: #f1f5f9;
+        color: #0f172a;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Sidebar premium styling */
+    /* Sidebar premium styling: Deep Navy Blue for high-end contrast */
     section[data-testid="stSidebar"] {
-        background-color: #03070f !important;
-        border-right: 1px solid #1e3a8a !important;
+        background-color: #0f172a !important;
+        border-right: 1px solid #e2e8f0 !important;
     }
     
-    /* Premium Header and info cards */
+    /* Force all sidebar labels and headings to be white for perfect readability */
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3, 
+    section[data-testid="stSidebar"] p, 
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] span,
+    section[data-testid="stSidebar"] .stMarkdown p {
+        color: #ffffff !important;
+    }
+    
+    /* Premium Header and Info Cards */
     .header-card {
-        background: linear-gradient(135deg, rgba(30, 58, 138, 0.25) 0%, rgba(59, 130, 246, 0.1) 100%);
-        border: 1px solid rgba(59, 130, 246, 0.3);
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
         border-radius: 12px;
         padding: 20px;
         margin-bottom: 25px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 10px 15px -3px rgba(0, 0, 0, 0.05);
     }
     
     .header-card h2 {
-        color: #3b82f6 !important;
+        color: #1e3a8a !important;
         font-weight: 700;
         margin-top: 0;
     }
     
     .header-card code {
-        background: rgba(59, 130, 246, 0.2);
-        color: #93c5fd;
-        border: 1px solid rgba(59, 130, 246, 0.3);
+        background: #eff6ff;
+        color: #1e40af;
+        border: 1px solid #bfdbfe;
         padding: 2px 6px;
         border-radius: 4px;
     }
     
     .status-text {
         font-size: 0.9em;
-        color: #94a3b8;
+        color: #475569;
     }
     
-    /* Premium button stylings */
+    /* Button styles: Royal Blue Gradient for main actions */
     div.stButton > button {
-        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
         color: #ffffff !important;
-        border: 1px solid rgba(59, 130, 246, 0.4) !important;
+        border: none !important;
         border-radius: 8px !important;
         font-weight: 600 !important;
-        box-shadow: 0 4px 12px rgba(29, 78, 216, 0.15) !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2) !important;
+        transition: all 0.2s ease !important;
     }
     
     div.stButton > button:hover {
-        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%) !important;
-        border-color: #60a5fa !important;
-        box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3) !important;
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+        box-shadow: 0 6px 15px rgba(37, 99, 235, 0.3) !important;
         transform: translateY(-1px) !important;
     }
     
-    /* Secondary (Inactive) room list buttons styling */
+    /* Inactive room list buttons (secondary style): Light Ice Blue */
     div.stButton > button[kind="secondary"] {
-        background: rgba(15, 23, 42, 0.6) !important;
-        color: #94a3b8 !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
+        background: #e0f2fe !important;
+        color: #0369a1 !important;
+        border: 1px solid #bae6fd !important;
         box-shadow: none !important;
     }
     
     div.stButton > button[kind="secondary"]:hover {
-        background: rgba(30, 41, 59, 0.8) !important;
+        background: #bae6fd !important;
+        color: #0284c7 !important;
+        border-color: #7dd3fc !important;
+    }
+    
+    /* Active room list buttons (primary style): Deep Blue */
+    div.stButton > button[kind="primary"] {
+        background: #1d4ed8 !important;
         color: #ffffff !important;
-        border-color: rgba(148, 163, 184, 0.4) !important;
+        border: 1px solid #1e40af !important;
+        box-shadow: 0 4px 10px rgba(29, 78, 216, 0.2) !important;
+    }
+    
+    /* Delete buttons: Translucent Red */
+    div.stButton > button[key^="del_"] {
+        background: #fee2e2 !important;
+        color: #ef4444 !important;
+        border: 1px solid #fca5a5 !important;
+        box-shadow: none !important;
+    }
+    
+    div.stButton > button[key^="del_"]:hover {
+        background: #fca5a5 !important;
+        color: #dc2626 !important;
+        border-color: #f87171 !important;
+    }
+    
+    /* Info alert boxes styling (st.info / st.warning) */
+    div[data-testid="stNotification"] {
+        background-color: #eff6ff !important;
+        border: 1px solid #bfdbfe !important;
+        border-radius: 8px !important;
+    }
+    
+    div[data-testid="stNotification"] p, 
+    div[data-testid="stNotification"] li,
+    div[data-testid="stNotification"] span {
+        color: #1e40af !important;
+        font-weight: 500 !important;
     }
 </style>
 """, unsafe_allow_html=True)
