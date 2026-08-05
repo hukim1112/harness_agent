@@ -24,6 +24,9 @@ class PromptManager:
         # Static Reference Context (Stored above boundary to enable caching benchmark)
         self.static_reference = ""
         
+        # Skills context (Loaded from Skills.md)
+        self.skills_context = self._load_file("Skills.md", "No public skills registered.")
+        
         # L5: Dynamic Context (Dynamic info, e.g. memories, status, etc.)
         self.l5_dynamic_context = "No dynamic context provided."
 
@@ -67,6 +70,7 @@ class PromptManager:
         full_prompt = (
             f"=== ROLE (L1) ===\n{self.l1_role}\n\n"
             f"=== OPERATING GUIDELINES (L2) ===\n{self.l2_guidelines}\n\n"
+            f"=== PUBLIC SKILLS CATALOG ===\n{self.skills_context}\n\n"
             f"=== TOOLS SPECS (L3) ===\n{self.l3_tools}\n\n"
             f"=== STATIC REFERENCE CONTEXT ===\n{self.static_reference}\n\n"
             f"{self.boundary_marker}\n\n"
@@ -98,7 +102,31 @@ def build_harness_agent_prompt(request: ModelRequest) -> str:
         pm.build_tool_specifications(request.tools)
         
     # 정적/동적 참고자료나 메모리 바인딩 (L5)
-    recalled_memory = getattr(ctx, "recalled_memory", "No dynamic context provided.")
+    recalled_memory = getattr(ctx, "recalled_memory", None)
+    if not recalled_memory or recalled_memory == "No dynamic context provided.":
+        try:
+            # SQLite 기반 장기 기억 매니저 로드 및 자동 검색
+            from harness.context.hermes_memory import HermesMemoryManager
+            db_path = "hermes_memory_production.db"
+            if os.path.exists(db_path):
+                memory_mgr = HermesMemoryManager(db_path=db_path)
+                user_query = ""
+                if hasattr(request, "messages") and request.messages:
+                    user_query = request.messages[-1].content
+                elif hasattr(request, "user_query") and request.user_query:
+                    user_query = request.user_query
+                
+                if user_query:
+                    # 질문 기반 연관 대화 에피소드(L2) 및 규칙 복원
+                    recalled_eps = memory_mgr.recall_episodic(user_query)
+                    if recalled_eps:
+                        recalled_memory = "\n".join([f"- [{ep[0].upper()}]: {ep[1]}" for ep in recalled_eps])
+        except Exception:
+            pass
+            
+    if not recalled_memory:
+        recalled_memory = "No dynamic context provided."
+        
     pm.set_dynamic_context(recalled_memory)
     
     return pm.build_system_prompt(dynamic_state)
