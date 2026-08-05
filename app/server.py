@@ -83,7 +83,7 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
 
     async def _stream_generator(input_data: StreamInput) -> AsyncGenerator[str, None]:
         try:
-            config = {"configurable": {"thread_id": input_data.thread_id}} if input_data.thread_id else {}
+            config = {"configurable": {"thread_id": input_data.thread_id}, "recursion_limit": 100} if input_data.thread_id else {"recursion_limit": 100}
             
             # 런타임에 제어 설정을 동적으로 주입
             logging_cfg = load_config("./configs/logging.config", {"logging_enabled": False, "log_path": "./artifacts/agent_audit_trail.json"})
@@ -163,7 +163,7 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
     @router.post("/invoke", response_model=ChatMessage)
     async def invoke(input_data: UserInput):
         try:
-            config = {"configurable": {"thread_id": input_data.thread_id}} if input_data.thread_id else {}
+            config = {"configurable": {"thread_id": input_data.thread_id}, "recursion_limit": 100} if input_data.thread_id else {"recursion_limit": 100}
             
             # 런타임 제어 설정 생성
             logging_cfg = load_config("./configs/logging.config", {"logging_enabled": False, "log_path": "./artifacts/agent_audit_trail.json"})
