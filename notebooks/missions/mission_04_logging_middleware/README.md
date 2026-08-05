@@ -28,8 +28,8 @@
     *   도구 호출이 발생하기 전과 완료된 후의 시각을 재어 각 도구별 수행 시간을 구하고 감사 로그에 함께 기록합니다.
 
 ### [태스크 2] 서버/에이전트에 미들웨어 연결
-*   `app/agents/chatbot.py` 생성 시 `LoggingMiddleware`를 `middleware` 인자에 주입합니다.
-*   `app/server.py`에서 `AgentContext` 객체를 활용해 `logging_enabled` 여부를 제어하도록 연동합니다.
+*   본 폴더에서 `logging_middleware.py` 파일을 완성한 후, 해당 파일을 `app/middleware/logging_middleware.py` 경로로 복사하여 덮어씁니다 (기존 솔루션 코드를 대체하여 교육생 본인의 코드로 테스트합니다).
+*   `app/agents/harness_agent.py`에서 `LoggingMiddleware`가 해당 모듈로부터 정상 주입되고 있고, Streamlit UI 상에서 로깅 스위치를 켰을 때 감사 로그가 `./artifacts/agent_audit_trail.json` 파일에 실시간 적재되는지 검증합니다.
 
 ---
 

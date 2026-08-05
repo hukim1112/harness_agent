@@ -1,29 +1,29 @@
-from langgraph.checkpoint.memory import MemorySaver
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain.agents import create_agent
 from app.utils import get_llm
 from app.prompts import CHATBOT_SYSTEM_PROMPT
 from app.tools import tools_chatbot
 from app.utils.context import AgentContext
-# TODO: Mission 02 - SQLite 체크포인터 임포트
-# from langgraph.checkpoint.sqlite import SqliteSaver
-# TODO: Mission 04 - 로깅 미들웨어 임포트
-# from app.middleware.logging_middleware import LoggingMiddleware
+from app.middleware.logging_middleware import LoggingMiddleware
 
 def get_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용 (openai: 접두사로 공급자 강제 매칭)
     llm = get_llm(model_name="openai:gpt-4o", temperature=0.0)
     
-    # TODO: Mission 02 - 임시 MemorySaver 대신 SqliteSaver로 영속 체크포인터 구축하기
-    memory = MemorySaver()
+    # 2. SQLite 기반의 L1 영속 체크포인터 메모리 구축
+    # 멀티 스레드 충돌 방지를 위해 check_same_thread=False 지정
+    conn = sqlite3.connect("app/database/checkpoints.db", check_same_thread=False)
+    memory = SqliteSaver(conn)
     
-    # TODO: Mission 03 - 범용 8대 도구(tools_chatbot)를 바인딩하여 ReAct 루프 완성하기
-    # (Mission 01에서는 빈 리스트 []로 시작합니다)
-    tools = []
+    # 3. 범용 8대 도구(tools_chatbot) 바인딩
+    tools = tools_chatbot
     
-    # TODO: Mission 04 - 실시간 모니터링을 위한 LoggingMiddleware 등록하기
-    middleware = []
+    # 4. 실시간 수명 주기 로깅 미들웨어 주입
+    logging_middleware = LoggingMiddleware(log_path="./artifacts/agent_audit_trail.json")
+    middleware = [logging_middleware]
     
-    # 3. 에이전트 구축
+    # 5. 에이전트 구축
     harness_agent = create_agent(
         model=llm,
         tools=tools,
