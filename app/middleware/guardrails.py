@@ -59,7 +59,7 @@ class InputSafetyGuardrail(AgentMiddleware):
         ])
         
         chain = prompt | self.llm
-        judgment_raw = chain.invoke({"text": user_query}).content
+        judgment_raw = chain.invoke({"text": user_query}, config={"tags": ["exclude_from_stream"]}).content
         judgment = normalize_content(judgment_raw).strip()
         
         if "unsafe" in judgment:
@@ -116,7 +116,7 @@ class InputSafetyGuardrail(AgentMiddleware):
         ])
         
         chain = prompt | self.llm
-        judgment_raw_res = await chain.ainvoke({"text": user_query})
+        judgment_raw_res = await chain.ainvoke({"text": user_query}, config={"tags": ["exclude_from_stream"]})
         judgment_raw = judgment_raw_res.content
         judgment = normalize_content(judgment_raw).strip()
         
@@ -176,7 +176,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
         ])
         
         intent_chain = intent_prompt | self.llm
-        intent_result_raw = intent_chain.invoke({"text": user_query}).content
+        intent_result_raw = intent_chain.invoke({"text": user_query}, config={"tags": ["exclude_from_stream"]}).content
         intent_result = normalize_content(intent_result_raw).strip().lower()
         
         if "off_topic" in intent_result:
@@ -226,7 +226,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
         ])
         
         intent_chain = intent_prompt | self.llm
-        intent_result_raw_res = await intent_chain.ainvoke({"text": user_query})
+        intent_result_raw_res = await intent_chain.ainvoke({"text": user_query}, config={"tags": ["exclude_from_stream"]})
         intent_result_raw = intent_result_raw_res.content
         intent_result = normalize_content(intent_result_raw).strip().lower()
         
@@ -288,7 +288,7 @@ class OutputSchemaRepairGuardrail(AgentMiddleware):
                         "error": str(parse_error),
                         "format_instructions": format_instructions,
                         "bad_content": raw_content
-                    }).content
+                    }, config={"tags": ["exclude_from_stream"]}).content
                     repaired_raw = normalize_content(repaired_raw_raw).strip()
                     
                     # 수선된 내용 검증
@@ -345,7 +345,7 @@ class OutputSchemaRepairGuardrail(AgentMiddleware):
                         "error": str(parse_error),
                         "format_instructions": format_instructions,
                         "bad_content": raw_content
-                    })
+                    }, config={"tags": ["exclude_from_stream"]})
                     repaired_raw_raw = repaired_raw_raw_res.content
                     repaired_raw = normalize_content(repaired_raw_raw).strip()
                     
