@@ -35,9 +35,25 @@ def get_llm(
         or os.getenv("LLM_PROVIDER")
     )
     
+    # 구글 모델(Gemini)인 경우, 환경 변수 유무에 따라 google_vertexai와 google_genai를 동적으로 라우팅합니다.
+    is_google_model = (
+        clean_model_name.startswith("gemini-") 
+        or final_provider in ["google_vertexai", "google_genai"]
+    )
+    
+    if is_google_model:
+        has_vertex_project = bool(os.getenv("VERTEX_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT"))
+        has_google_api_key = bool(os.getenv("GOOGLE_API_KEY"))
+        
+        if has_vertex_project:
+            final_provider = "google_vertexai"
+        elif has_google_api_key:
+            final_provider = "google_genai"
+        else:
+            final_provider = "google_vertexai" if has_vertex_project else "google_genai"
+            
     if not final_provider:
-        project = os.getenv("VERTEX_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
-        final_provider = "google_vertexai" if project else "google_genai"
+        final_provider = "google_genai"
 
     # 2. Vertex AI인 경우에만 GCP 특화 옵션 (project, location) 자동 보정
     if final_provider == "google_vertexai":
