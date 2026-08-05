@@ -1,7 +1,7 @@
 import os
 import json
 from langchain.agents.middleware import AgentMiddleware, before_model, wrap_model_call, ModelResponse
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from app.utils import get_llm
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -24,7 +24,18 @@ class InputSafetyGuardrail(AgentMiddleware):
         if not messages:
             return handler(request)
             
-        user_query = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
+        # 🌟 중요: 마지막 메시지가 사용자(HumanMessage/User)가 아닌 경우(예: ToolMessage),
+        # 이미 1차 사용자 질문 검증을 마쳤으므로 가드레일 검사를 스킵합니다.
+        last_msg = messages[-1]
+        is_human = (
+            isinstance(last_msg, HumanMessage)
+            or getattr(last_msg, "type", None) == "human"
+            or getattr(last_msg, "role", None) == "user"
+        )
+        if not is_human:
+            return handler(request)
+            
+        user_query = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
         user_query = normalize_content(user_query)
         
         # 유해 규정 심사 가이드라인 정의
@@ -79,7 +90,18 @@ class TopicAlignmentGuardrail(AgentMiddleware):
         if not messages:
             return handler(request)
             
-        user_query = messages[-1].content if hasattr(messages[-1], "content") else str(messages[-1])
+        # 🌟 중요: 마지막 메시지가 사용자(HumanMessage/User)가 아닌 경우(예: ToolMessage),
+        # 이미 1차 사용자 질문 검증을 마쳤으므로 가드레일 검사를 스킵합니다.
+        last_msg = messages[-1]
+        is_human = (
+            isinstance(last_msg, HumanMessage)
+            or getattr(last_msg, "type", None) == "human"
+            or getattr(last_msg, "role", None) == "user"
+        )
+        if not is_human:
+            return handler(request)
+            
+        user_query = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
         user_query = normalize_content(user_query)
         
         # 주제 이탈 감지 라우팅 프롬프트
@@ -103,7 +125,7 @@ class TopicAlignmentGuardrail(AgentMiddleware):
             print(f"🛑 [TopicAlignmentGuardrail] 차단됨: 비즈니스 이탈 화제 감지")
             return ModelResponse(
                 result=[
-                    AIMessage(content="🛑 [Topic Guard Blocked]: 저희는 당사의 서비스 범위에 최적화된 에이전트입니다. 타사 제품이나 외부 어시스턴트에 대한 성능 평가 및 비교 정보는 제공하지 않습니다.")
+                    AIMessage(content="🛑 [Topic Guard Blocked]: 저희는 당사의 서비스 범위에 최적화된 에이전트입니다. 타사 제품이나 외부 어시스턴트에 대한 성능 평가 및 비교 정보 precedents는 제공하지 않습니다.")
                 ]
             )
             
