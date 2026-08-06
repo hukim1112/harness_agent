@@ -33,11 +33,11 @@ class JudgeVerdict(BaseModel):
     is_approved: bool = Field(description="에이전트의 답변과 수행 이력이 유저의 원래 목적과 요구사항을 충족했는지 여부")
     feedback: str = Field(description="불합격(is_approved=False)인 경우 에이전트가 보완해야 하는 구체적인 결함 사항과 수정 지시 사항 (합격인 경우 빈 문자열)")
 
-class AutonomousEvaluatorMiddleware(AgentMiddleware):
+class EvaluatorHarness(AgentMiddleware):
     """
     최종 답변 도출 시점에 고성능 서브 에이전트(Judge LLM)를 구동하여
     작업 결과 및 궤적(Trajectory)의 오류를 검증하고, 결함 발견 시 model 노드로 롤백하여
-    자동 재작업(Self-Correction Rework)을 지시하는 샘플 참고용 미들웨어.
+    자동 재작업(Self-Correction Rework)을 지시하는 샘플 참고용 에발루에이터 하네스(Evaluator Harness).
     """
     def __init__(self, max_reworks: int = 2):
         self.max_reworks = max_reworks
@@ -66,18 +66,18 @@ class AutonomousEvaluatorMiddleware(AgentMiddleware):
         judgment = self._run_judge(messages, final_answer)
         
         if judgment.is_approved:
-            print("✅ [AutonomousEvaluator] Evaluator 승인 완료. 최종 답변을 사용자에게 전달합니다.")
+            print("✅ [EvaluatorHarness] Evaluator 승인 완료. 최종 답변을 사용자에게 전달합니다.")
             return None
 
         # 4. 무한 루프 방지를 위한 최대 재작업 한도 조회
         rework_count = getattr(runtime.context, "rework_count", 0)
         if rework_count >= self.max_reworks:
-            print(f"🚨 [AutonomousEvaluator] 최대 재작업 한도({self.max_reworks}회)를 초과하여 더 이상 보정하지 않고 종료합니다.")
+            print(f"🚨 [EvaluatorHarness] 최대 재작업 한도({self.max_reworks}회)를 초과하여 더 이상 보정하지 않고 종료합니다.")
             return None
 
         # 5. 재시도 카운트 갱신 및 model 노드로 롤백 지시 (Command)
         runtime.context.rework_count = rework_count + 1
-        print(f"🔄 [AutonomousEvaluator] Evaluator 반려 발생 ({rework_count + 1}/{self.max_reworks}회차). model 노드로 롤백합니다.")
+        print(f"🔄 [EvaluatorHarness] Evaluator 반려 발생 ({rework_count + 1}/{self.max_reworks}회차). model 노드로 롤백합니다.")
 
         # 사용자 지시 사항에 맞춰 다듬어진 피드백 및 재작업 지시문 적용
         feedback_content = (
@@ -141,5 +141,5 @@ class AutonomousEvaluatorMiddleware(AgentMiddleware):
             return JudgeVerdict(**result)
         except Exception as e:
             # 예외 발생 시 안전을 위해 패스하도록 처리
-            print(f"⚠️ [AutonomousEvaluator] 판정 중 에러 발생 (패스 처리): {e}")
+            print(f"⚠️ [EvaluatorHarness] 판정 중 에러 발생 (패스 처리): {e}")
             return JudgeVerdict(is_approved=True, feedback="")
