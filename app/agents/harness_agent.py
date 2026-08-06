@@ -18,7 +18,10 @@ def get_agent_executor():
     
     # 2. SQLite 기반의 L1 영속 체크포인터 메모리 구축
     # 멀티 스레드 충돌 방지를 위해 check_same_thread=False 지정
-    conn = sqlite3.connect("app/database/checkpoints.db", check_same_thread=False)
+    import os
+    db_dir = "app/database"
+    os.makedirs(db_dir, exist_ok=True)
+    conn = sqlite3.connect(os.path.join(db_dir, "checkpoints.db"), check_same_thread=False)
     memory = SqliteSaver(conn)
     
     # 3. 범용 8대 도구(tools_chatbot) 바인딩
