@@ -112,12 +112,21 @@ class EvaluatorHarness(AgentMiddleware):
         trajectory_str = "\n".join(formatted_history)
 
         system_prompt = (
-            "당신은 에이전트의 작업 실행 궤적(Trajectory)과 최종 결과물(Final Answer)을 감사하는 전문 평가 에이전트(Evaluator)입니다.\n"
-            "사용자의 원래 목적 및 지시사항을 에이전트가 도구를 활용해 올바르고 누락 없이 완수했는지 심사하십시오.\n\n"
-            "채점 기준:\n"
-            "1. 에이전트가 수행 도중 치명적인 에러나 논리적 흐름의 무한 반복을 겪었는가?\n"
-            "2. 결과물(작성된 파일 등)이 빈 껍데기이거나 무의미한 에러 메시지만 포함하고 있는가?\n"
-            "3. 최종 답변이 사용자의 질문에 진실되고 유용하게 완결된 형태로 대답하고 있는가?\n\n"
+            "당신은 에이전트의 작업 실행 궤적(Trajectory)과 최종 결과물(Final Answer)을 감사하고 보정하는 전문 평가 에이전트(Evaluator)입니다.\n"
+            "에이전트가 실행 도중 겪은 단순 에러나 시행착오(Trial & Error)는 에이전트 스스로의 극복 과정이므로 불이익을 주지 마십시오.\n"
+            "오직 아래의 '치명적 결함'이 발견되었을 때만 반려하고 재작업을 지시해야 합니다.\n\n"
+            
+            "🚨 [치명적 결함 및 심사 기준]\n"
+            "1. 목적 누락: 사용자의 원래 지시사항이나 요구사항 중 일부를 무시하고 답변에서 생략했는가?\n"
+            "2. 환각 현상(Hallucination): 도구 실행 결과(Tool Response)로 획득한 명확한 사실적 근거가 있음에도 불구하고, 이를 최종 답변 작성 시 반영하지 않거나 완전히 왜곡하여 거짓말을 지어냈는가?\n"
+            "3. 결과 불능: 생성된 최종 파일 등의 결과물이 텅 빈 껍데기이거나 에러 메시지만 포함하고 있는가?\n"
+            "4. 무한 루프: 동일한 에러가 발생하는 특정 도구를 반복적으로 계속 호출하며 갇혀 있는가?\n\n"
+            
+            "💡 [중요: 피드백 작성 가이드라인 (훈수)]\n"
+            "반려(is_approved=False)를 결정했다면, 에이전트가 헤매지 않도록 구체적인 '우회 제안 및 힌트(훈수)'를 feedback 필드에 상세히 적어주십시오.\n"
+            "예: 'A 경로에 쓰기 권한이 막혀 있으니 ./artifacts 디렉토리 아래에 파일 작성을 시도하십시오.',\n"
+            "    '도구 조회 결과 인구수가 5,000명이라고 확인되었으므로, 환각 답변인 10만 명을 지우고 5,000명으로 데이터를 정정하여 요약하십시오.'\n\n"
+            
             "평가 규격:\n"
             "{format_instructions}"
         )
@@ -135,8 +144,15 @@ class EvaluatorHarness(AgentMiddleware):
         chain = prompt | self.judge_llm | self.parser
         
         try:
+            # 🌟 [학습 노트] format_instructions 란 무엇인가요?
+            # JsonOutputParser는 JudgeVerdict(Pydantic 모델)를 기준으로 LLM이 준수해야 할 JSON 스키마를
+            # 자연어 설명문(예: "출력은 반드시 {'is_approved': bool, 'feedback': str} 형식의 JSON이어야 합니다.")으로
+            # 자동 생성해 줍니다. 이 문자열 포맷 정보를 {format_instructions} 위치에 주입하여,
+            # AI 판사가 완벽한 규격의 구조화된 데이터(JSON)로 채점 결과를 리턴하도록 규격화합니다.
+            format_instructions_str = self.parser.get_format_instructions()
+            
             result = chain.invoke({
-                "format_instructions": self.parser.get_format_instructions()
+                "format_instructions": format_instructions_str
             }, config={"tags": ["exclude_from_stream"]})
             return JudgeVerdict(**result)
         except Exception as e:
