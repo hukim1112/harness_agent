@@ -129,7 +129,7 @@ def auto_context_compactor(state: AgentState, runtime: Runtime) -> dict[str, Any
                 f"[... SYSTEM NOTE: Truncated by auto_context_compactor middleware (original length: {original_len} chars) ...]\n"
                 f"{str(msg.content)[-100:]}"
             )
-            msg = ToolMessage(content=compacted_content, tool_call_id=msg.tool_call_id)
+            msg = ToolMessage(content=compacted_content, tool_call_id=msg.tool_call_id, id=msg.id)
             modified = True
         new_messages.append(msg)
         
@@ -218,7 +218,7 @@ def smart_context_indexer(state: AgentState, runtime: Runtime) -> dict[str, Any]
                         f"{summary}"
                     )
                 
-                msg = ToolMessage(content=compacted_content, tool_call_id=msg.tool_call_id)
+                msg = ToolMessage(content=compacted_content, tool_call_id=msg.tool_call_id, id=msg.id)
                 modified = True
             except Exception as e:
                 print(f"⚠️ [SmartContextIndexer] 요약/인덱싱 실패: {e}")
@@ -228,7 +228,7 @@ def smart_context_indexer(state: AgentState, runtime: Runtime) -> dict[str, Any]
                     f"[... Truncated ...]\n"
                     f"{original_content[-1000:]}"
                 )
-                msg = ToolMessage(content=compacted_content, tool_call_id=msg.tool_call_id)
+                msg = ToolMessage(content=compacted_content, tool_call_id=msg.tool_call_id, id=msg.id)
                 modified = True
                 
         new_messages.append(msg)
