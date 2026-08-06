@@ -19,10 +19,13 @@ def get_agent_executor():
     # 2. SQLite 기반의 L1 영속 체크포인터 메모리 구축
     # 멀티 스레드 충돌 방지를 위해 check_same_thread=False 지정
     import os
+    import aiosqlite
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+    
     db_dir = "app/database"
     os.makedirs(db_dir, exist_ok=True)
-    conn = sqlite3.connect(os.path.join(db_dir, "checkpoints.db"), check_same_thread=False)
-    memory = SqliteSaver(conn)
+    conn = aiosqlite.connect(os.path.join(db_dir, "checkpoints.db"))
+    memory = AsyncSqliteSaver(conn)
     
     # 3. 범용 8대 도구(tools_chatbot) 바인딩
     tools = tools_chatbot
@@ -49,4 +52,18 @@ def get_agent_executor():
     )
     return harness_agent
 
-agent_executor = get_agent_executor()
+class LazyAgentExecutor:
+    def __init__(self, factory):
+        self.factory = factory
+        self._executor = None
+
+    def _get_executor(self):
+        if self._executor is None:
+            self._executor = self.factory()
+        return self._executor
+
+    def __getattr__(self, name):
+        return getattr(self._get_executor(), name)
+
+agent_executor = LazyAgentExecutor(get_agent_executor)
+
