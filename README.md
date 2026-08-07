@@ -80,6 +80,69 @@ streamlit run app/ui.py
 ```
 * 브라우저에서 `http://localhost:8501`에 접속한 뒤 사이드바에서 작동시킬 에이전트 모델을 스위칭하고 대화를 나누어 보세요.
 
+### 💬 내가 만든 에이전트를 웹 화면에 바로 추가하여 대화하기
+
+이 프로젝트는 **서버를 껐다 켤 필요 없이, 에이전트 파일만 폴더에 넣으면 웹 화면이 실시간으로 알아채고 에이전트를 추가**해 줍니다. 
+
+실습 도중 나만의 에이전트를 완성했거나 새로 만들고 싶다면, 아래의 3단계만 따라 해 보세요.
+
+#### 1단계. 에이전트 파일 만들기
+`app/agents/` 폴더 안에 원하는 이름으로 파이썬 파일(예: `my_agent.py`)을 새로 만듭니다.
+
+#### 2단계. 에이전트 코드 작성하기 (그대로 복사해서 붙여넣기)
+새로 만든 파일(`my_agent.py`) 안에 아래의 코드를 그대로 복사해서 붙여넣고 저장합니다. 
+
+> ⚠️ **[의무 사항] AGENT_METADATA 선언 필수**
+> 파일 내에 `AGENT_METADATA` 변수를 반드시 선언해 주어야 합니다. 만약 이를 누락하면 웹 화면에 한글 이름 대신 영문 파일명(`MY_AGENT`)과 기본 영문 설명문이 투박하게 표기됩니다.
+
+```python
+# app/agents/my_agent.py
+
+from langchain.agents import create_agent
+from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.tools import tool
+from app.utils import get_llm
+from app.utils.context import AgentContext
+
+# 1) UI에 표시될 에이전트의 소개 정보 (필수)
+AGENT_METADATA = {
+    "name": "my_agent", 
+    "description": "더하기 도구가 탑재된 나만의 실습용 ReAct 에이전트"
+}
+
+# 2) 에이전트가 사용할 실제 도구 정의 (생략 없이 작동 가능한 도구 예시)
+@tool
+def add_numbers(a: int, b: int) -> int:
+    """두 정수 a와 b를 더한 결과를 반환합니다. 더하기 연산이 필요할 때 사용하세요."""
+    return a + b
+
+# 3) 에이전트를 생성하는 함수 (서버가 이 함수를 찾아 실행합니다)
+async def create_agent_executor():
+    # 1. LLM 모델 생성 (Gemini 3.5 Flash 모델 활용)
+    llm = get_llm(model_name="gemini-3.5-flash", temperature=0.0)
+    
+    # 2. 대화 기억 보존을 위한 체크포인터 셋업
+    memory = MemorySaver()
+    
+    # 3. 도구 목록 정의
+    tools = [add_numbers]
+    
+    # 4. 에이전트 최종 구축
+    agent = create_agent(
+        model=llm,
+        tools=tools,
+        checkpointer=memory,
+        context_schema=AgentContext
+    )
+    return agent
+```
+
+#### 3단계. 웹 브라우저 새로고침하고 대화하기
+1. 띄워져 있는 웹 채팅 화면([http://localhost:8501](http://localhost:8501))으로 이동하여 **새로고침(F5)**을 누릅니다.
+2. 왼쪽 메뉴의 **"Select Agent" 드롭다운 상자**를 누르면, 방금 만든 `MY_AGENT`가 실시간으로 감지되어 목록에 추가되어 있습니다.
+3. 해당 에이전트를 선택하고 대화를 시작해 보세요!
+   *(예: "37 더하기 84는 뭐야?" 라고 물어보면 에이전트가 탑재된 `add_numbers` 도구를 호출하여 정상적으로 덧셈 결과를 답변합니다.)*
+
 ---
 
 ## 📂 프로젝트 구조
