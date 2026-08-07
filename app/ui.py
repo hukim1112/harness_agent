@@ -8,7 +8,6 @@ import streamlit as st
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.client import AgentClient
-from app.agents import AGENT_REGISTRY
 
 # --- Page Config ---
 st.set_page_config(page_title="Harness Agent UI", layout="wide")
@@ -146,7 +145,17 @@ def get_client():
 client = get_client()
 
 # --- Agent Options ---
-agent_options = {a["name"]: a["description"] for a in AGENT_REGISTRY}
+@st.cache_data(ttl=5)
+def fetch_agent_options():
+    try:
+        agents = client.get_agents()
+        if not agents:
+            return {"chatbot": "기본 챗봇 (서버 응답 없음)"}
+        return {a["name"]: a["description"] for a in agents}
+    except Exception as e:
+        return {"chatbot": f"연결 오류: {str(e)}"}
+
+agent_options = fetch_agent_options()
 
 # --- Helpers ---
 def render_message_content(content):
