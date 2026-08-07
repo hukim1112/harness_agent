@@ -12,7 +12,7 @@ class AgentClient:
         단일 호출 (Blocking)
         :return: {"type": "ai", "content": "..."}
         """
-        url = f"{self.base_url}/{agent_name}/invoke"
+        url = f"{self.base_url}/agents/{agent_name}/invoke"
         payload = {"message": message, "thread_id": thread_id}
         try:
             response = requests.post(url, json=payload)
@@ -26,7 +26,8 @@ class AgentClient:
         스트리밍 호출 (Generator)
         :yield: dict (token, tool_start, error 등)
         """
-        url = f"{self.base_url}/{agent_name}/stream"
+        url = f"{self.base_url}/agents/{agent_name}/stream"
+
         payload = {"message": message, "thread_id": thread_id, "stream_tokens": True}
         
         try:
@@ -66,6 +67,16 @@ class AgentClient:
         except requests.exceptions.RequestException as e:
             return {"type": "error", "error": str(e)}
 
+    def get_agents(self) -> list:
+        url = f"{self.base_url}/agents"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching agents: {e}")
+            return []
+
     def get_sessions(self, agent_name: str = None) -> list:
         url = f"{self.base_url}/sessions"
         params = {"agent_name": agent_name} if agent_name else {}
@@ -100,9 +111,9 @@ class AgentClient:
 if __name__ == "__main__":
     client = AgentClient()
     
-    # AGENT_REGISTRY에서 사용 가능한 에이전트 목록을 동적으로 로드
-    from app.agents import AGENT_REGISTRY
-    available_agents = [a["name"] for a in AGENT_REGISTRY]
+    # API를 통해 동적으로 에이전트 목록 로드
+    client = AgentClient()
+    available_agents = [a["name"] for a in client.get_agents()]
 
     print("="*50)
     print("🤖 Agent Client Console")

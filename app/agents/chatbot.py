@@ -5,7 +5,12 @@ from app.prompts import CHATBOT_SYSTEM_PROMPT
 from app.tools import tools_chatbot
 from app.utils.context import AgentContext
 
-def get_agent_executor():
+AGENT_METADATA = {
+    "name": "chatbot",
+    "description": "도구 및 모니터링이 활성화된 기준완성형 챗봇 (서버/UI 테스트용)"
+}
+
+def create_agent_executor():
     # 1. 일원화된 utils 유틸의 LLM 팩토리 활용 (openai: 접두사로 공급자 강제 매칭)
     llm = get_llm(model_name="google_vertexai:gemini-3.5-flash", temperature=0.0)
     
@@ -22,4 +27,3 @@ def get_agent_executor():
     )
     return chatbot_agent
 
-agent_executor = get_agent_executor()
