@@ -40,7 +40,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 import importlib
-from app.agents import AGENT_REGISTRY
 from app.utils.message_utils import sanitize_text, normalize_content
 from app.utils.db import create_session, get_sessions, delete_session, add_message, get_messages
 from app.utils.context import AgentContext
