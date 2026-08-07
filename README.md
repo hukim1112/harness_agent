@@ -92,9 +92,6 @@ streamlit run app/ui.py
 #### 2단계. 에이전트 코드 작성하기 (그대로 복사해서 붙여넣기)
 새로 만든 파일(`my_agent.py`) 안에 아래의 코드를 그대로 복사해서 붙여넣고 저장합니다. 
 
-> ⚠️ **[의무 사항] AGENT_METADATA 선언 필수**
-> 파일 내에 `AGENT_METADATA` 변수를 반드시 선언해 주어야 합니다. 만약 이를 누락하면 웹 화면에 한글 이름 대신 영문 파일명(`MY_AGENT`)과 기본 영문 설명문이 투박하게 표기됩니다.
-
 ```python
 # app/agents/my_agent.py
 
