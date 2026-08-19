@@ -71,125 +71,138 @@ def render_pretty_prompt_stack(messages) -> None:
         return
 
     system_prompt = messages[0].content
-    human_prompt = messages[1].content
+    human_prompt = messages[1].content if len(messages) > 1 else ""
     
-    boundary_marker = "=== DYNAMIC_BOUNDARY ==="
+    boundary_marker = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__" if "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__" in system_prompt else "=== DYNAMIC_BOUNDARY ==="
     if boundary_marker in system_prompt:
-        static_part, _ = system_prompt.split(boundary_marker, 1)
+        static_part, dynamic_part = system_prompt.split(boundary_marker, 1)
     else:
         static_part = system_prompt
+        dynamic_part = ""
 
-    # 1. Static Part에서 Layer 1, Layer 2, Layer 3 정적 계층 분리 파싱
-    # MultiLayeredPrompt가 조립 시 박아 넣는 [LAYER X] 태그를 기준으로 칼같이 자릅니다.
+    # 1. Static Part에서 Layer 1, Layer 2 파싱
     l1_tag = "[LAYER 1: GLOBAL BASE & PERSONALITY]"
     l2_tag = "[LAYER 2: TOOL SPECIFICATIONS]"
-    l3_tag = "[LAYER 3: LOCAL PROJECT RULES]"
     
     layer1_text = ""
     layer2_text = ""
-    layer3_text = ""
     
-    try:
-        if l2_tag in static_part and l3_tag in static_part:
-            # Layer 1 추출
-            parts_l2 = static_part.split(l2_tag, 1)
-            layer1_text = parts_l2[0].replace(l1_tag, "").strip()
-            
-            # Layer 2 및 Layer 3 추출
-            rest = parts_l2[1]
-            parts_l3 = rest.split(l3_tag, 1)
-            layer2_text = parts_l3[0].strip()
-            layer3_text = parts_l3[1].strip()
-        else:
-            # 구버전 프롬프트 규격 폴백 파싱
-            l1_marker = "## Personality & Interpersonal Spec"
-            l2_marker = "## Doing Software Engineering Tasks"
-            l3_marker = "## Executing Actions with Care"
-            parts_l2 = static_part.split(l2_marker, 1)
-            layer1_text = parts_l2[0].replace("# [STATIC SYSTEM PROMPT: GPT-4o Production Agent Spec]", "").strip()
-            rest = parts_l2[1]
-            if l3_marker in rest:
-                parts_l3 = rest.split(l3_marker, 1)
-                layer2_text = l2_marker + "\n" + parts_l3[0].strip()
-                layer3_text = l3_marker + "\n" + parts_l3[1].strip()
-            else:
-                layer2_text = l2_marker + "\n" + rest.strip()
-                layer3_text = "N/A"
-    except Exception:
+    if l2_tag in static_part:
+        parts_l2 = static_part.split(l2_tag, 1)
+        layer1_text = parts_l2[0].replace(l1_tag, "").replace("=== Layer 1: System Identity & Core Role ===", "").strip()
+        layer2_text = parts_l2[1].strip()
+    else:
         layer1_text = static_part.strip()
-        layer2_text = "Tool Spec segment parsing bypassed."
-        layer3_text = "Action Spec segment parsing bypassed."
+        layer2_text = "Tool Spec / Skills registered."
 
-    # 2. Human Part에서 Layer 4, Layer 5 동적 계층 분리 파싱
+    # 2. Dynamic Part에서 Layer 3, Layer 4, Layer 5 동적 계층 분리 파싱
+    l3_tag = "[LAYER 3: DYNAMIC RUNTIME ENVIRONMENT]"
+    l4_tag = "[LAYER 4: RECALLED MEMORY & DYNAMIC CONTEXT]"
+    l5_tag = "[LAYER 5: LOCAL PROJECT RULES]"
+    
+    layer3_content = ""
     layer4_content = ""
     layer5_content = ""
-    if "[LAYER 5 - DYNAMIC_USER_TASK]:" in human_prompt:
-        l4_part, l5_part = human_prompt.split("[LAYER 5 - DYNAMIC_USER_TASK]:", 1)
-        layer4_content = l4_part.replace("[LAYER 4 - DYNAMIC_WORKING_CONTEXT]:", "").strip()
-        layer5_content = l5_part.strip()
-    else:
-        layer4_content = "N/A"
-        layer5_content = human_prompt
     
+    if l3_tag in dynamic_part and l5_tag in dynamic_part:
+        p3 = dynamic_part.split(l3_tag, 1)[1]
+        if l4_tag in p3:
+            p4 = p3.split(l4_tag, 1)
+            layer3_content = p4[0].strip()
+            p5 = p4[1].split(l5_tag, 1)
+            layer4_content = p5[0].strip()
+            layer5_content = p5[1].strip()
+        else:
+            p5 = p3.split(l5_tag, 1)
+            layer3_content = p5[0].strip()
+            layer4_content = "No recalled memory"
+            layer5_content = p5[1].strip()
+    elif "[LAYER 3/4 - DYNAMIC_WORKING_CONTEXT]:" in dynamic_part:
+        p = dynamic_part.split("[LAYER 3/4 - DYNAMIC_WORKING_CONTEXT]:", 1)[1]
+        if "[LAYER 5 - LOCAL PROJECT RULES]:" in p:
+            p_split = p.split("[LAYER 5 - LOCAL PROJECT RULES]:", 1)
+            layer3_content = p_split[0].strip()
+            layer4_content = "Combined with Layer 3"
+            layer5_content = p_split[1].strip()
+        else:
+            layer3_content = p.strip()
+            layer4_content = "N/A"
+            layer5_content = "N/A"
+    else:
+        layer3_content = dynamic_part.strip() or "No runtime environment"
+        layer4_content = "No recalled memory"
+        layer5_content = "Default project rules"
+
+    layer_user_content = human_prompt.strip()
+
     # 3. 5계층이 위에서부터 순서대로 적층된 현대적 카드 데크 조립
     html_content = f"""
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 820px; border: 2px solid #334155; border-radius: 12px; overflow: hidden; background-color: #0B0F19; color: #E2E8F0; padding: 20px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);">
         <h3 style="margin-top: 0; color: #38BDF8; border-bottom: 2px solid #1E293B; padding-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-            <span>🛡️</span> Production Agent 5-Layer Prompt Stack
+            <span>🛡️</span> Production Agent 5-Layer Prompt Stack (Claude Code Spec)
         </h3>
         
         <div style="font-size: 11px; color: #64748B; margin-bottom: 15px;">
-            ※ 정적 시스템 프롬프트(L1~L3)는 파일로부터 비동기 로드되어 캐싱 영역에 고정되며, 동적 사용자 컨텍스트(L4~L5)만 런타임에 변환 교환됩니다.
+            ※ 정적 시스템 프롬프트(L1~L2)는 캐싱 영역에 고정(Cache HIT)되며, 동적 컨텍스트(L3~L5) 및 유저 쿼리만 런타임에 갱신됩니다.
         </div>
 
         <!-- [LAYER 1] GLOBAL BASE DIRECTIVE -->
         <div style="border: 1px solid #0284C7; border-radius: 8px; background-color: #0C1E32; padding: 12px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="background-color: #0284C7; color: #E0F2FE; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 1: GLOBAL DIRECTIVE & PERSONALITY</span>
-                <span style="color: #0EA5E9; font-size: 10px; font-weight: bold;">Cached Static Stack</span>
+                <span style="background-color: #0284C7; color: #E0F2FE; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 1: GLOBAL DIRECTIVE & PERSONALITY (PROMPT.md)</span>
+                <span style="color: #0EA5E9; font-size: 10px; font-weight: bold;">Cached Static Prefix</span>
             </div>
-            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #93C5FD; margin: 0; max-height: 100px; overflow-y: auto; background: #070F1E; padding: 8px; border-radius: 4px; border: 1px solid #1E3A8A;">{layer1_text}</pre>
+            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #93C5FD; margin: 0; max-height: 90px; overflow-y: auto; background: #070F1E; padding: 8px; border-radius: 4px; border: 1px solid #1E3A8A;">{layer1_text}</pre>
         </div>
 
-        <!-- [LAYER 2] TOOL CAPABILITIES SPEC -->
+        <!-- [LAYER 2] TOOL & SKILL CAPABILITIES -->
         <div style="border: 1px solid #059669; border-radius: 8px; background-color: #062319; padding: 12px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="background-color: #059669; color: #D1FAE5; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 2: TOOL CAPABILITIES & SPECIFICATION</span>
-                <span style="color: #10B981; font-size: 10px; font-weight: bold;">Cached Static Stack</span>
+                <span style="background-color: #059669; color: #D1FAE5; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 2: TOOL SPECIFICATIONS & SKILLS CATALOG</span>
+                <span style="color: #10B981; font-size: 10px; font-weight: bold;">Cached Static Prefix</span>
             </div>
-            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #A7F3D0; margin: 0; max-height: 120px; overflow-y: auto; background: #02120C; padding: 8px; border-radius: 4px; border: 1px solid #064E3B;">{layer2_text}</pre>
-        </div>
-
-        <!-- [LAYER 3] PROJECT LAWS & POLICIES -->
-        <div style="border: 1px solid #7C3AED; border-radius: 8px; background-color: #1B0F30; padding: 12px; margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="background-color: #7C3AED; color: #F5F3FF; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 3: PROJECT LAWS & POLICIES (CLAUDE.md)</span>
-                <span style="color: #A78BFA; font-size: 10px; font-weight: bold;">Cached Static Stack</span>
-            </div>
-            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #DDD6FE; margin: 0; max-height: 100px; overflow-y: auto; background: #0E071A; padding: 8px; border-radius: 4px; border: 1px solid #4C1D95;">{layer3_text}</pre>
+            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #A7F3D0; margin: 0; max-height: 100px; overflow-y: auto; background: #02120C; padding: 8px; border-radius: 4px; border: 1px solid #064E3B;">{layer2_text}</pre>
         </div>
 
         <!-- [DYNAMIC BOUNDARY MARKER] -->
         <div style="text-align: center; margin: 15px 0; border-top: 2px dashed #EF4444; border-bottom: 2px dashed #EF4444; padding: 6px 0; color: #FCA5A5; background-color: rgba(239, 68, 68, 0.08); font-weight: bold; font-size: 10.5px; letter-spacing: 1px; border-radius: 4px;">
-            🛑 DYNAMIC_BOUNDARY (KV Cache Cut-off Line)
+            🛑 __SYSTEM_PROMPT_DYNAMIC_BOUNDARY__ (KV Cache Cut-off Line)
         </div>
 
-        <!-- [LAYER 4] DYNAMIC WORKING CONTEXT -->
+        <!-- [LAYER 3] DYNAMIC RUNTIME ENVIRONMENT -->
+        <div style="border: 1px solid #D97706; border-radius: 8px; background-color: #2D1A05; padding: 12px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="background-color: #D97706; color: #FEF3C7; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 3: RUNTIME ENVIRONMENT (OS, CWD, Permissions)</span>
+                <span style="color: #FBBF24; font-size: 10px; font-weight: bold;">Uncached Dynamic Suffix</span>
+            </div>
+            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #FDE68A; margin: 0; background: #1B0F02; padding: 8px; border-radius: 4px; border: 1px solid #78350F;">{layer3_content}</pre>
+        </div>
+
+        <!-- [LAYER 4] RECALLED MEMORY & DYNAMIC DOCS -->
+        <div style="border: 1px solid #7C3AED; border-radius: 8px; background-color: #1B0F30; padding: 12px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="background-color: #7C3AED; color: #F5F3FF; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 4: RECALLED MEMORY & DYNAMIC DOCS (Hermes L2/L3 Memory, MCP)</span>
+                <span style="color: #A78BFA; font-size: 10px; font-weight: bold;">Uncached Dynamic Suffix</span>
+            </div>
+            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #DDD6FE; margin: 0; background: #0E071A; padding: 8px; border-radius: 4px; border: 1px solid #4C1D95;">{layer4_content}</pre>
+        </div>
+
+        <!-- [LAYER 5] LOCAL PROJECT RULES -->
         <div style="border: 1px solid #EA580C; border-radius: 8px; background-color: #2D1405; padding: 12px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="background-color: #EA580C; color: #FFEDD5; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 4: DYNAMIC WORKING CONTEXT</span>
-                <span style="color: #F97316; font-size: 10px; font-weight: bold;">Uncached Dynamic Stack</span>
+                <span style="background-color: #EA580C; color: #FFEDD5; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 5: LOCAL PROJECT RULES (AGENT.md)</span>
+                <span style="color: #F97316; font-size: 10px; font-weight: bold;">Uncached Dynamic Suffix</span>
             </div>
-            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #FDBA74; margin: 0; background: #1B0B02; padding: 8px; border-radius: 4px; border: 1px solid #7C2D12;">{layer4_content}</pre>
+            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #FDBA74; margin: 0; background: #1B0B02; padding: 8px; border-radius: 4px; border: 1px solid #7C2D12;">{layer5_content}</pre>
         </div>
 
-        <!-- [LAYER 5] DYNAMIC USER TASK -->
+        <!-- [USER MESSAGE] DYNAMIC USER TASK -->
         <div style="border: 1px solid #EF4444; border-radius: 8px; background-color: #2D0F0F; padding: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="background-color: #EF4444; color: #FEE2E2; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">LAYER 5: DYNAMIC USER TASK / QUERY</span>
-                <span style="color: #FCA5A5; font-size: 10px; font-weight: bold;">Uncached Dynamic Stack</span>
+                <span style="background-color: #EF4444; color: #FEE2E2; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px;">USER TASK / QUERY (HumanMessage)</span>
+                <span style="color: #FCA5A5; font-size: 10px; font-weight: bold;">Active Turn Input</span>
             </div>
-            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #FCA5A5; margin: 0; background: #1A0707; padding: 8px; border-radius: 4px; border: 1px solid #7F1D1D;">{layer5_content}</pre>
+            <pre style="white-space: pre-wrap; font-family: 'Consolas', 'Courier New', monospace; font-size: 10.5px; color: #FCA5A5; margin: 0; background: #1A0707; padding: 8px; border-radius: 4px; border: 1px solid #7F1D1D;">{layer_user_content}</pre>
         </div>
     </div>
     """
