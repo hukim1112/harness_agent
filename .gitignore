@@ -12,8 +12,17 @@ env/
 
 # Databases & Caching
 *.db
+*.db-shm
+*.db-wal
 *.db-journal
 *.sqlite3
+app/database/
+
+# Runtime Log & Audit Artifacts
+artifacts/logs/
+artifacts/memory/
+artifacts/agent_audit_trail.json
+logs/
 
 # Task tracking & State
 task.md
