@@ -109,6 +109,7 @@ python app/server.py --port 8000
 chainlit run app/chainlit_ui.py --port 8080
 ```
 * 브라우저에서 `http://localhost:8080`에 접속하여 실시간 SSE 스트리밍과 도구 실행 과정을 시각적으로 확인합니다.
+* **웹 UI 기본 로그인 계정**: ID `user` / PW `1234`
 * **HITL 대화형 버튼**, **HTML 대시보드 인라인 렌더링**, **스마트 세션 기억 회상**을 웹에서 즉시 체험할 수 있습니다.
 
 ### 3. 터미널 대화형 CLI 클라이언트 (선택)
