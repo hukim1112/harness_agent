@@ -147,5 +147,5 @@ async def run_prompt_and_memory_test():
 
 if __name__ == "__main__":
     success = asyncio.run(run_prompt_and_memory_test())
-    if not success:
-        sys.exit(1)
+    sys.stdout.flush()
+    os._exit(0 if success else 1)
