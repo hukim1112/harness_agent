@@ -25,11 +25,13 @@ import json
 import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.utils import init_chat_model
 from app.utils.context import AgentContext
 from app.prompts import SUPERVISOR_SYSTEM_PROMPT
 from app.tools import tools_supervisor
+from app.tools.custom_tools import roll_dice, convert_currency
 from app.middleware.memory import SemanticMemoryStore, EpisodicStore, MemoryMiddleware
 from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
 from app.middleware.error_control.self_recovery import (
@@ -37,6 +39,8 @@ from app.middleware.error_control.self_recovery import (
     ToolErrorHandlerMiddleware,
     ModelCallLimitMiddleware,
 )
+from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
+from app.middleware.observability import AgentLogTracer
 
 # 1. 에이전트 프로필
 AGENT_METADATA = {
@@ -98,11 +102,6 @@ async def create_agent_executor():
         review_llm=llm,
     )
     memory_tools = memory_mw.get_tools()
-
-    from app.tools.custom_tools import roll_dice, convert_currency
-    from langchain.agents.middleware import HumanInTheLoopMiddleware
-    from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
-    from app.middleware.observability import AgentLogTracer
 
     # 7. 전체 도구 세트 통합 (Supervisor 15종 + Memory 2종 + Custom 2종 = 19종)
     active_tools = list(tools_supervisor) + list(memory_tools) + [roll_dice, convert_currency]
