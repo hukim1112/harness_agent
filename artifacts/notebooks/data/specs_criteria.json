@@ -1,0 +1,12 @@
+{
+  "scoring_formula": "Value_Score = (RAM_GB * 10 + SSD_GB / 10 + Rating * 20) / (Price_KRW / 100000)",
+  "recommendation_threshold": "Top 2 highest Value_Score models",
+  "required_columns": [
+    "ID",
+    "Brand",
+    "Model",
+    "Price",
+    "Score",
+    "Category"
+  ]
+}

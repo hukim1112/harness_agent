@@ -1,166 +1,185 @@
-# 🛡️ Agent Harness Lab (하네스 엔지니어링 실습 파이프라인)
+# 🛡️ Agent Harness Lab (프로덕션 에이전트 하네스 엔지니어링)
 
-본 프로젝트는 **"하네스 엔지니어링 기반 에이전트 개발"** 교육을 위한 종합 실습 코드베이스입니다.
+> **LLM 모델을 신뢰할 수 있는 엔터프라이즈 에이전트로 도약시키는 하네스 엔지니어링 종합 실습 파이프라인**  
+> 자가 치유(Self-Recovery)부터 2단계 계층형 메모리, Claude Code 표준 5-Layer 프롬프트 조립, Progressive Skills 자율 실행, Human-in-the-Loop 권한 게이트, 가드레일 거버넌스 및 비동기 감사 궤적 관측성까지 — 실전 프로덕션 AI 에이전트 아키텍처를 직접 구축하고 검증합니다.
+
+---
+
+## 📢 v2.0 아키텍처 전면 개편 안내
+
+최신 프로덕션 AI 에이전트 하네스 표준과 생태계에 맞춰 코드베이스를 전면 재설계했습니다.
+
+| 구분 | v1.0 (Legacy) | v2.0 (Current) |
+| :--- | :--- | :--- |
+| **웹 UI 프론트엔드** | Streamlit (`app/ui.py`) | **Chainlit (`app/chainlit_ui.py`, 포트 `8080`, SSE 스트리밍 & HITL 버튼 연동)** |
+| **프롬프트 아키텍처** | 단일 문자열 템플릿 | **Claude Code 표준 5-Layer Prompt Assembler (JIT Dynamic Assembly)** |
+| **메모리 시스템** | 단순 대화 체크포인터 | **2-Stage JIT 계층형 메모리 (Semantic Memory + Daemon Background Episodic Store)** |
+| **도구 확장 메커니즘** | 정적 함수 바인딩 | **Progressive Skills (Frontmatter 경량 인덱싱 & 토큰 90% 절약형 동적 실행)** |
+| **권한 및 보안 제어** | 없음 (완전자율) | **Human-in-the-Loop (`__interrupt__` 기반 권한 게이트 & 웹 승인/거부 인터랙션)** |
+| **안전 거버넌스** | 없음 | **Llama Guard 3 S1~S5 입력 보안 필터 & NeMo 규정 일치 리디렉션 가드레일** |
+| **관측성 및 로깅** | 단순 콘솔 출력 | **`AgentLogTracer` 비동기 큐 기반 감사 궤적 적재 & `log_analyzer` 통계 대시보드** |
+| **런타임 프레임워크** | LangChain 구버전 | **LangChain 1.3+ / LangGraph 1.2+ / Python 3.12 (WSL2 및 Codespaces 최적화)** |
 
 ---
 
 ## 🚀 시작하기 (환경 세팅)
 
-Codespaces 또는 로컬 WSL2(우분투) 환경을 처음 열었다면, 터미널에서 다음 명령어를 실행하여 가상환경 세팅 및 의존성 패키지를 한 번에 설치하세요.
+### 1. GitHub Codespaces 환경 (권장)
+GitHub Codespaces 환경에서는 사전 빌드된 Docker 컨테이너를 기반으로 구동되므로, **별도의 패키지 설치 없이 즉시 실행**할 수 있습니다.
+1. 리포지토리 상단의 **[Code] ➔ [Codespaces] ➔ [Create codespace on main]**을 클릭합니다.
+2. 컨테이너가 열리면 프로젝트 루트의 `.env` 파일을 확인하고 API 키를 입력합니다.
+
+### 2. 로컬 환경 (WSL2 / Linux 수동 설치)
+로컬 우분투 또는 WSL2 환경에서 직접 실행할 경우 자동 설치 스크립트를 사용하세요:
 
 ```bash
-# 1. install 폴더로 이동하여 자동 설치 스크립트 실행
+# install 폴더로 이동하여 패키지 설치
 cd install
 bash install_all.sh
 ```
 
-설치가 완료되면 Python 패키지 의존성 설치 및 `.env` 템플릿 복사 작업이 자동으로 완료됩니다.
-
-### 환경 변수 설정
-프로젝트 루트에 생성된 `.env` 파일을 메모장이나 주피터에서 열고 사용할 API 키를 설정하세요.
+### 🔑 환경 변수 설정 (`.env`)
+프로젝트 루트에 생성된 `.env` 파일에 사용할 API 키를 설정합니다:
 
 ```env
-OPENAI_API_KEY="your-openai-api-key"
 GOOGLE_API_KEY="your-gemini-api-key"
+OPENAI_API_KEY="your-openai-api-key"
 ```
 
-### 📊 LangSmith 트레이싱 및 관측성 설정 (권장)
-에이전트 실행 흐름의 레이턴시와 호출 과정을 시각적으로 감사하기 위해 LangSmith 키를 추가 설정합니다.
+### 📊 LangSmith 트레이싱 및 관측성 설정 (선택 사항)
+LangSmith를 통한 실시간 호출 궤적 시각화가 필요한 경우 아래 환경 변수를 추가합니다:
 
 ```env
 LANGCHAIN_TRACING_V2=true
 LANGCHAIN_API_KEY="your-langsmith-key"
-LANGCHAIN_PROJECT=agent-harness-lab
+LANGCHAIN_PROJECT=harness_agent
 ```
 
 ---
 
-## 🧭 커리큘럼 및 노트북 구조
+## 🧭 2단계 커리큘럼: 노트북(개념) ➔ 미션(프로덕션 구현)
 
-학습 흐름은 점진적 빌드업(Step-by-step) 형태로 구성되어 있습니다.
+학습 흐름은 **노트북(핸즈온 이론 학습)** 후 **미션(프로덕션 에이전트 점진적 빌드업)**을 수행하는 체계적인 2단계 구조입니다.
+
+### 📗 핸즈온 실습 노트북 (이론 & 프로토타이핑)
 
 ```text
 notebooks/
-├── 01_reasoning_and_multiagent.ipynb   # [추론] Naive, Planner(CoT, Task, Explicit), 협업 프로토콜
-├── 02_context_management.ipynb         # [컨텍스트] KV Caching 최적화, Hermes 4계층 메모리
-├── 03_tool_and_mcp.ipynb               # [도구/MCP] Progressive Disclosure, ACI 스키마, SQLite MCP
-├── 04_human_in_the_loop.ipynb          # [권한/HITL] 3단계 권한 제어 게이트 (Allow/Deny/Edit)
-└── 05_guardrails_and_monitoring.ipynb  # [안전/로깅] 3대 가드레일 에뮬레이션, 관측성 미들웨어 로깅
+├── 0_Template.ipynb                       # 📝 하네스 기본 템플릿
+├── 1.Reasoning and Subagent.ipynb         # 🤖 ReAct, Task Planning, 서브에이전트 오케스트레이션
+├── 2.Prompt_and_Memory.ipynb              # 🧠 5-Layer 프롬프트 조립 & 2-Stage JIT 계층형 메모리
+├── 3.Context_Compaction.ipynb             # 📦 컨텍스트 압축, 요약 및 장기 대화 윈도우 보존
+├── 4.Skills_and_MCP.ipynb                 # 🧰 Progressive Skills 동적 발견 & Model Context Protocol
+├── 5.Evaluation_and_LLM_as_Judge.ipynb    # ⚖️ LLM-as-a-Judge 정량 채점 & 회귀 테스트 자동화
+├── 6.Human_in_the_Loop.ipynb              # 🛑 도구 보안 등급제 & LangGraph __interrupt__ 권한 게이트
+└── 7.Guardrails_and_Monitoring.ipynb      # 🛡️ Llama Guard 3 입력 보안, NeMo 주제 일치, AgentLogTracer
 ```
-
-| 단계 | 노트북 | 핵심 학습 목표 |
-|:---:|--------|-----------|
-| **1** | `01_reasoning_and_multiagent` | CoT/Task/Explicit Planner 아키텍처 및 멀티에이전트 협업 프로토콜 비교 실습 |
-| **2** | `02_context_management` | 프롬프트 캐싱 최적화 및 4계층 장기/단기 에이전트 메모리 설계 |
-| **3** | `03_tool_and_mcp` | 스킬 자율 발견(Progressive Disclosure) 및 Model Context Protocol(MCP) 데이터 연동 |
-| **4** | `04_human_in_the_loop` | CLI/UI 환경에서의 인간 개입(HITL) 및 3단계 권한 모델 구현 |
-| **5** | `05_guardrails_and_monitoring` | 가드레일 및 로깅 미들웨어 감사 로그 적재 |
 
 ---
 
-## 🖥️ 실시간 백엔드 API & 채팅 UI 가동
+### 🎯 실전 프로덕션 미션 로드맵 (단계별 코드베이스 완성)
 
-노트북 실습이 완료되면, 에이전트들을 서비스용 백엔드 API와 실시간 채팅 웹 인터페이스 형태로 구동할 수 있습니다. 
-
+```text
+missions/
+├── 00_mission_start_and_chat.md            # 🚀 FastAPI 서버 & Chainlit 웹 UI 구동 및 첫 대화
+├── 01_mission_add_custom_tool.md           # 🛠️ 커스텀 도구(주사위/환율) 구현 및 챗봇 바인딩
+├── 02_mission_self_recovery_and_subagent.md# 🛡️ 3대 자가 복구 미들웨어 & 서브에이전트 오케스트레이션
+├── 03_mission_prompt_and_memory.md         # 🧠 Claude Code 프롬프트 조립기 & 백그라운드 에피소딕 메모리
+├── 04_mission_skills.md                    # 🧰 금융 분석 전문 스킬(13종) 동적 카탈로그 주입 & 대시보드
+├── 05_mission_human_in_the_loop.md         # 🛑 roll_dice 타깃 HITL 권한 게이트 & 웹 대화형 승인/거절
+├── 06_mission_guardrails.md                # 🛡️ 프롬프트 인젝션(S4) 선제 차단 & 오프토픽 대체 안내
+└── 07_mission_logging_and_observability.md # 📊 비동기 감사 궤적 적재 & 세션 데이터 분석 대시보드
 ```
-[사용자 (Streamlit UI)] ──(HTTP/SSE)──> [FastAPI 백엔드 Server] ──> [Harness 에이전트]
-```
 
-### 1. 백엔드 서버(FastAPI) 가동
-에이전트를 호스팅하는 API 엔드포인트를 구동합니다.
+---
+
+## 🖥️ 실시간 백엔드 API & 웹 채팅 UI 가동
+
+노트북 학습 후 완성된 하네스 에이전트 시스템을 실제 서비스 환경으로 실행합니다. **터미널 2개**를 열어 서버와 웹 프론트엔드를 구동하세요.
+
+### 1. 백엔드 서버 (FastAPI) 가동 — 터미널 ①
 ```bash
 python app/server.py --port 8000
 ```
-* 서버 실행 후 `http://localhost:8000/docs` 에서 Swagger 문서 형태로 에이전트 작동 상태를 테스트할 수 있습니다.
+* 에이전트 서빙 API가 `:8000` 포트에서 가동됩니다.
+* `http://localhost:8000/docs`에서 Swagger UI로 API 스펙을 확인할 수 있습니다.
 
-### 2. Streamlit 웹 채팅 UI 가동
-사용자 친화적인 인터랙티브 채팅 화면을 띄워 에이전트들을 제어합니다.
+### 2. Chainlit 웹 채팅 UI 가동 — 터미널 ②
 ```bash
-streamlit run app/ui.py
+chainlit run app/chainlit_ui.py --port 8080
 ```
-* 브라우저에서 `http://localhost:8501`에 접속한 뒤 사이드바에서 작동시킬 에이전트 모델을 스위칭하고 대화를 나누어 보세요.
+* 브라우저에서 `http://localhost:8080`에 접속하여 실시간 SSE 스트리밍과 도구 실행 과정을 시각적으로 확인합니다.
+* **HITL 대화형 버튼**, **HTML 대시보드 인라인 렌더링**, **스마트 세션 기억 회상**을 웹에서 즉시 체험할 수 있습니다.
 
-### 💬 내가 만든 에이전트를 웹 화면에 바로 추가하여 대화하기
-
-이 프로젝트는 **서버를 껐다 켤 필요 없이, 에이전트 파일만 폴더에 넣으면 웹 화면이 실시간으로 알아채고 에이전트를 추가**해 줍니다. 
-
-실습 도중 나만의 에이전트를 완성했거나 새로 만들고 싶다면, 아래의 3단계만 따라 해 보세요.
-
-#### 1단계. 에이전트 파일 만들기
-`app/agents/` 폴더 안에 원하는 이름으로 파이썬 파일(예: `my_agent.py`)을 새로 만듭니다.
-
-#### 2단계. 에이전트 코드 작성하기 (그대로 복사해서 붙여넣기)
-새로 만든 파일(`my_agent.py`) 안에 아래의 코드를 그대로 복사해서 붙여넣고 저장합니다. 
-
-```python
-# app/agents/my_agent.py
-
-from langchain.agents import create_agent
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.tools import tool
-from app.utils import get_llm
-from app.utils.context import AgentContext
-
-# 1) UI에 표시될 에이전트의 소개 정보 (필수)
-AGENT_METADATA = {
-    "name": "my_agent", 
-    "description": "더하기 도구가 탑재된 나만의 실습용 ReAct 에이전트"
-}
-
-# 2) 에이전트가 사용할 실제 도구 정의 (생략 없이 작동 가능한 도구 예시)
-@tool
-def add_numbers(a: int, b: int) -> int:
-    """두 정수 a와 b를 더한 결과를 반환합니다. 더하기 연산이 필요할 때 사용하세요."""
-    return a + b
-
-# 3) 에이전트를 생성하는 함수 (서버가 이 함수를 찾아 실행합니다)
-async def create_agent_executor():
-    # 1. LLM 모델 생성 (Gemini 3.5 Flash 모델 활용)
-    llm = get_llm(model_name="gemini-3.5-flash", temperature=0.0)
-    
-    # 2. 대화 기억 보존을 위한 체크포인터 셋업
-    memory = MemorySaver()
-    
-    # 3. 도구 목록 정의
-    tools = [add_numbers]
-    
-    # 4. 에이전트 최종 구축
-    agent = create_agent(
-        model=llm,
-        tools=tools,
-        checkpointer=memory,
-        context_schema=AgentContext
-    )
-    return agent
+### 3. 터미널 대화형 CLI 클라이언트 (선택)
+```bash
+python app/client.py
 ```
 
-#### 3단계. 웹 브라우저 새로고침하고 대화하기
-1. 띄워져 있는 웹 채팅 화면([http://localhost:8501](http://localhost:8501))으로 이동하여 **새로고침(F5)**을 누릅니다.
-2. 왼쪽 메뉴의 **"Select Agent" 드롭다운 상자**를 누르면, 방금 만든 `MY_AGENT`가 실시간으로 감지되어 목록에 추가되어 있습니다.
-3. 해당 에이전트를 선택하고 대화를 시작해 보세요!
-   *(예: "37 더하기 84는 뭐야?" 라고 물어보면 에이전트가 탑재된 `add_numbers` 도구를 호출하여 정상적으로 덧셈 결과를 답변합니다.)*
+### 4. 세션 감사 로그 분석기 실행
+대화를 나눈 후 누적된 세션 실행 통계(세션수, 레이턴시, 도구 빈도 TOP 5)를 분석합니다:
+```bash
+python -m app.utils.log_analyzer
+```
 
 ---
 
-## 📂 프로젝트 구조
+## 🧪 미션별 자동화 검증 스위트 (Test Suites)
+
+각 미션을 수행한 후 터미널에서 1:1 매핑된 테스트 스크립트를 실행하여 구현의 무결성을 즉시 검증할 수 있습니다:
+
+| 테스트 파일 | 대응 미션 | 주요 검증 내용 | 실행 명령어 |
+| :--- | :--- | :--- | :--- |
+| **`test_mission01.py`** | Mission 01 | 커스텀 도구 2종 및 `chatbot.py` 바인딩 검증 | `python tests/test_mission01.py` |
+| **`test_mission02.py`** | Mission 02 | `main_agent.py` 자가 복구 미들웨어 3종 & 도구 15종 결합 | `python tests/test_mission02.py` |
+| **`test_mission03.py`** | Mission 03 | 5-Layer 프롬프트 조립 & 메모리 + **실물 시각화** | `python tests/test_mission03.py` |
+| **`test_mission04.py`** | Mission 04 | `skills/` 동적 확장 & Layer 2.2 자동 주입 + **실물 시각화** | `python tests/test_mission04.py` |
+| **`test_mission05.py`** | Mission 05 | HITL (`roll_dice` 타깃 권한 게이트 & 승인/거부 재개) | `python tests/test_mission05.py` |
+| **`test_mission06.py`** | Mission 06 | Guardrails (입력 보안 필터 차단 & 주제 일치 리디렉션) | `python tests/test_mission06.py` |
+| **`test_mission07.py`** | Mission 07 | Logging (`AgentLogTracer` 비동기 적재 & `log_analyzer` 분석) | `python tests/test_mission07.py` |
+
+---
+
+## 📂 프로젝트 구조 (Monorepo)
 
 ```text
-agent-harness-lab/
-├── notebooks/              # 📗 단계별 핸즈온 실습 노트북 (01~05)
-├── src/                    # ⚙️ 모듈화된 프로덕션 파이썬 패키지
-│   └── harness/            #   └── 하네스 코어 모듈 (reasoning, context, tools, monitoring 등)
-├── app/                    # 🧠 서빙 및 인터페이스 애플리케이션
-│   ├── agents/             #   └── 에이전트 핵심 구동기 (chatbot.py 등)
-│   ├── prompts/            #   └── 에이전트 시스템 지침 정의서 (chatbot.py 등)
-│   ├── tools/              #   └── 에이전트 격발 도구 정의서 (common.py 등)
-│   ├── utils/              #   └── 모델 팩토리 및 메시지 포맷 헬퍼 (llm.py 등)
-│   ├── server.py           #   └── 에이전트 서빙 API 서버 (FastAPI)
-│   ├── ui.py               #   └── 에이전트 실시간 채팅 웹 UI (Streamlit)
-│   └── client.py           #   └── 터미널용 대화형 테스트 CLI 클라이언트
-├── skills/                 # 🛠️ 에이전트가 점진적으로 학습할 스킬 폴더
-│   ├── mcp/                #   └── SQLite MCP 제어 도구 세트
-│   └── pdf_processing/     #   └── 가상/바이너리 PDF 텍스트 및 메타데이터 파서 스킬 세트
-├── artifacts/              # 📂 감사 로그 및 파일 적재 산출물
-├── install/                # 🚀 자동 설치 스크립트 모음 (requirements.txt 포함)
+harness_agent/
+├── notebooks/              # 📗 단계별 핸즈온 실습 노트북 (0~7)
+├── missions/               # 🎯 단계별 프로덕션 미션 가이드 (00~07)
+├── tests/                  # 🧪 미션별 1:1 매핑 자동화 검증 스크립트
+├── configs/                # ⚙️ 런타임 하네스 설정 파일 모음
+│   ├── model.config        #   └── 메인/가드레일 LLM 모델 지정
+│   ├── memory.config       #   └── 세션 메모리 활성화 설정
+│   ├── hitl.config         #   └── roll_dice 타깃 HITL 권한 게이트 설정
+│   ├── guardrail.config    #   └── 입력 보안 및 주제 차단 목록 설정
+│   └── logging.config      #   └── 비동기 감사 로그 적재 경로 설정
+├── app/                    # 🧠 프로덕션 에이전트 시스템 코어
+│   ├── agents/             #   ├── 에이전트 정의 (chatbot, main_agent, memory_agent 등)
+│   ├── tools/              #   ├── 내장 도구 및 커스텀 도구 모음 (custom_tools 등)
+│   ├── prompts/            #   ├── 시스템 프롬프트 및 지침서 (SUPERVISOR, SKILL.md 등)
+│   ├── middleware/         #   ├── 하네스 미들웨어 모음
+│   │   ├── memory/         #   │   └── 시맨틱/에피소딕 계층형 메모리 미들웨어
+│   │   ├── prompt/         #   │   └── Claude Code 5-Layer 프롬프트 조립기
+│   │   ├── error_control/  #   │   └── 모델 폴백 / 서킷 브레이커 자가 복구 미들웨어
+│   │   ├── guardrails/     #   │   └── InputSafetyGuardrail & TopicAlignmentGuardrail
+│   │   └── observability/  #   │   └── AgentLogTracer 비동기 감사 로거 및 시각화기
+│   ├── utils/              #   ├── 모델 팩토리, 메시지 유틸, log_analyzer 유틸
+│   ├── server.py           #   ├── FastAPI 에이전트 API 서빙 서버 (SSE 스트리밍)
+│   ├── chainlit_ui.py      #   ├── Chainlit 웹 인터랙티브 채팅 프론트엔드
+│   └── client.py           #   └── 터미널 대화형 CLI 클라이언트
+├── skills/                 # 🧰 Progressive Skills 패키지 모음 (금융 분석 등 13종)
+├── artifacts/              # 📂 메모리 DB, 스킬 풀, 감사 로그 및 파일 적재소
+├── install/                # 🚀 자동 설치 스크립트 (requirements.txt 포함)
 └── README.md               # 📖 메인 프로젝트 설명서
 ```
+
+---
+
+## 📚 참고 자료 및 공식 생태계
+
+- [LangChain 공식 문서](https://python.langchain.com)
+- [LangGraph 공식 문서](https://langchain-ai.github.io/langgraph)
+- [Chainlit 공식 문서](https://docs.chainlit.io)
+- [NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)
+- [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+- [LangSmith](https://smith.langchain.com)

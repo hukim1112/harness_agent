@@ -21,11 +21,25 @@ from pydantic import BaseModel, Field
 # =============================================================================
 # Category 1: File Operations (FileRead, FileEdit, FileWriter, NotebookEdit)
 # =============================================================================
-@tool
+
+class FileReadInput(BaseModel):
+    file_path: str = Field(description="Relative or absolute path of the file to read from disk.")
+    offset: int = Field(default=1, description="Line number to start reading from (1-indexed). Defaults to 1.")
+    limit: int = Field(default=250, description="Maximum number of lines to read in a single call. Defaults to 250.")
+    show_line_numbers: bool = Field(default=True, description="Whether to prefix each line with line numbers (e.g. '     1 | ...'). Defaults to True.")
+
+@tool(args_schema=FileReadInput)
 def file_read(file_path: str, offset: int = 1, limit: int = 250, show_line_numbers: bool = True) -> str:
-    """
-    Reads lines from a file on the local filesystem with optional line numbers and pagination.
-    Maps directly to Claude Code's FileReadTool.
+    """Reads lines from a file on the local filesystem with optional line numbers and pagination.
+
+    Args:
+        file_path: Relative or absolute path of the file to read from disk.
+        offset: Line number to start reading from (1-indexed). Defaults to 1.
+        limit: Maximum number of lines to read in a single call. Defaults to 250.
+        show_line_numbers: Whether to prefix each output line with line numbers. Defaults to True.
+
+    Returns:
+        Formatted string containing header with file metadata and line range, followed by file content lines.
     """
     abs_path = os.path.abspath(os.path.expanduser(file_path))
     if not os.path.exists(abs_path):
@@ -58,11 +72,22 @@ def file_read(file_path: str, offset: int = 1, limit: int = 250, show_line_numbe
         return f"FileRead Error: Failed to read file '{file_path}': {str(e)}"
 
 
-@tool
+class FileEditInput(BaseModel):
+    file_path: str = Field(description="Relative or absolute path to the target file to edit.")
+    target_content: str = Field(description="The exact multi-line string block to find and replace. Must match uniquely in the file.")
+    replacement_content: str = Field(description="The exact string block to substitute in place of target_content.")
+
+@tool(args_schema=FileEditInput)
 def file_edit(file_path: str, target_content: str, replacement_content: str) -> str:
-    """
-    Replaces an exact matching block of text in a file with replacement_content.
-    Maps directly to Claude Code's FileEditTool (exact string matching & atomic file write).
+    """Replaces an exact matching block of text in a file with replacement_content.
+
+    Args:
+        file_path: Relative or absolute path to the target file to edit.
+        target_content: The exact multi-line string block to find and replace. Must match uniquely in the file.
+        replacement_content: The exact string block to substitute in place of target_content.
+
+    Returns:
+        Success message with replacement byte sizes, or error message if file/match fails.
     """
     abs_path = os.path.abspath(os.path.expanduser(file_path))
     if not os.path.exists(abs_path):
@@ -97,11 +122,22 @@ def file_edit(file_path: str, target_content: str, replacement_content: str) -> 
         return f"FileEdit Error: Failed to edit '{file_path}': {str(e)}"
 
 
-@tool
+class FileWriterInput(BaseModel):
+    file_path: str = Field(description="Relative or absolute destination file path. Parent directories created automatically.")
+    content: str = Field(description="Complete text string content to write into the file.")
+    overwrite: bool = Field(default=True, description="If True, overwrites existing file. If False, fails if target file exists. Defaults to True.")
+
+@tool(args_schema=FileWriterInput)
 def file_writer(file_path: str, content: str, overwrite: bool = True) -> str:
-    """
-    Creates a new file or overwrites an existing file with content.
-    Maps directly to Claude Code's FileWriteTool.
+    """Creates a new file or overwrites an existing file with the provided text content.
+
+    Args:
+        file_path: Relative or absolute destination file path. Parent directories are created automatically.
+        content: Complete text string content to write into the file.
+        overwrite: If True, overwrites existing file. If False, fails if target file already exists. Defaults to True.
+
+    Returns:
+        Success message with character count written, or error message on failure.
     """
     abs_path = os.path.abspath(os.path.expanduser(file_path))
     if os.path.exists(abs_path) and not overwrite:
@@ -116,11 +152,22 @@ def file_writer(file_path: str, content: str, overwrite: bool = True) -> str:
         return f"FileWrite Error: Failed to write to '{file_path}': {str(e)}"
 
 
-@tool
+class NotebookEditInput(BaseModel):
+    notebook_path: str = Field(description="Relative or absolute path to the .ipynb notebook file.")
+    cell_index: int = Field(description="0-indexed integer specifying which cell in the notebook to modify.")
+    new_code: str = Field(description="Complete new source code or markdown text for the target cell.")
+
+@tool(args_schema=NotebookEditInput)
 def notebook_edit(notebook_path: str, cell_index: int, new_code: str) -> str:
-    """
-    Edits a specific cell inside a Jupyter Notebook (.ipynb).
-    Maps to Claude Code's NotebookEditTool.
+    """Edits a specific code or markdown cell inside a Jupyter Notebook (.ipynb) file.
+
+    Args:
+        notebook_path: Relative or absolute path to the .ipynb notebook file.
+        cell_index: 0-indexed integer specifying which cell to modify.
+        new_code: Complete new source code or markdown text for the target cell.
+
+    Returns:
+        Success message confirming cell update, or error message on out-of-bounds index or invalid JSON.
     """
     abs_path = os.path.abspath(os.path.expanduser(notebook_path))
     if not os.path.exists(abs_path):
@@ -147,16 +194,23 @@ def notebook_edit(notebook_path: str, cell_index: int, new_code: str) -> str:
 # =============================================================================
 # Category 2: Shell (Bash)
 # =============================================================================
-@tool
+
+class BashCommandInput(BaseModel):
+    command: str = Field(description="The shell command line string to execute in bash/sh.")
+    timeout_seconds: int = Field(default=30, description="Maximum execution time in seconds before process is terminated. Defaults to 30.")
+    max_stdout_length: int = Field(default=4000, description="Maximum character length of stdout to return to prevent prompt bloat. Defaults to 4000. Max 50000.")
+
+@tool(args_schema=BashCommandInput)
 def bash_command(command: str, timeout_seconds: int = 30, max_stdout_length: int = 4000) -> str:
-    """
-    Executes a real shell command on local system, capturing stdout, stderr, and exit code.
-    Maps directly to Claude Code's BashTool.
+    """Executes a real shell command on local system, capturing stdout, stderr, and exit code.
 
     Args:
-        command: The shell command to run.
-        timeout_seconds: Subprocess execution timeout in seconds. Defaults to 30.
-        max_stdout_length: Maximum stdout character length to return to prevent prompt bloat. Defaults to 4000. Can be set up to 50000 for large outputs.
+        command: The shell command line string to execute in bash/sh.
+        timeout_seconds: Maximum execution time in seconds before process is terminated. Defaults to 30.
+        max_stdout_length: Maximum character length of stdout to return to prevent prompt bloat. Defaults to 4000. Maximum allowed is 50000.
+
+    Returns:
+        Formatted execution summary including exit code, duration, stdout, and stderr outputs.
     """
     stdout_limit = min(50000, max(100, max_stdout_length))
     
@@ -206,11 +260,24 @@ def bash_command(command: str, timeout_seconds: int = 30, max_stdout_length: int
 # =============================================================================
 VCS_EXCLUDE_DIRS = {".git", ".svn", ".hg", "node_modules", "__pycache__", ".venv", "env_langchain_123"}
 
-@tool
+class GrepSearchInput(BaseModel):
+    pattern: str = Field(description="Regular expression pattern string to match within file contents.")
+    search_path: str = Field(default=".", description="Directory or file path to search within. Defaults to current directory ('.').")
+    output_mode: str = Field(default="files_with_matches", description="Output format mode - 'files_with_matches' (paths only), 'content' (lines with match), or 'count' (match summary). Defaults to 'files_with_matches'.")
+    head_limit: int = Field(default=50, description="Maximum number of matching files or lines to return. Defaults to 50.")
+
+@tool(args_schema=GrepSearchInput)
 def grep_search(pattern: str, search_path: str = ".", output_mode: str = "files_with_matches", head_limit: int = 50) -> str:
-    """
-    Searches file contents using regex matching, ignoring VCS directories.
-    Maps directly to Claude Code's GrepTool.
+    """Searches file contents using regex matching while excluding VCS and environment directories.
+
+    Args:
+        pattern: Regular expression pattern string to match within file contents.
+        search_path: Directory or file path to search within. Defaults to current directory ('.').
+        output_mode: Output format mode - 'files_with_matches' (file paths only), 'content' (lines with match), or 'count' (match summary). Defaults to 'files_with_matches'.
+        head_limit: Maximum number of matching files or lines to return. Defaults to 50.
+
+    Returns:
+        String listing matching file paths, line occurrences, or count summary.
     """
     abs_root = os.path.abspath(os.path.expanduser(search_path))
     if not os.path.exists(abs_root):
@@ -270,11 +337,20 @@ def grep_search(pattern: str, search_path: str = ".", output_mode: str = "files_
         return f"Found {len(matching_files)} matching files:\n" + "\n".join(matching_files[:head_limit])
 
 
-@tool
+class GlobSearchInput(BaseModel):
+    pattern: str = Field(description="Glob wildcard pattern string to match file names and paths (e.g. '**/*.py' or 'src/**/*.ts').")
+    search_path: str = Field(default=".", description="Base directory path to execute search from. Defaults to current directory ('.').")
+
+@tool(args_schema=GlobSearchInput)
 def glob_search(pattern: str, search_path: str = ".") -> str:
-    """
-    Finds files matching a glob wildcard pattern (e.g. '**/*.py').
-    Maps to Claude Code's GlobTool.
+    """Finds file paths matching a glob wildcard pattern (e.g. '**/*.py' or 'src/**/*.ts').
+
+    Args:
+        pattern: Glob wildcard pattern string to match file names and paths.
+        search_path: Base directory path to execute search from. Defaults to current directory ('.').
+
+    Returns:
+        List of relative matching file paths, or a message indicating no matches found.
     """
     abs_root = os.path.abspath(os.path.expanduser(search_path))
     full_pattern = os.path.join(abs_root, pattern)
@@ -291,20 +367,30 @@ def glob_search(pattern: str, search_path: str = ".") -> str:
     return f"Found {len(clean_matches)} files matching '{pattern}':\n" + "\n".join(clean_matches[:100])
 
 
-@tool
+class ToolSearchInput(BaseModel):
+    query: str = Field(description="Keyword or search phrase to match against available tool names and capability descriptions.")
+
+@tool(args_schema=ToolSearchInput)
 def tool_search(query: str) -> str:
-    """
-    Searches registered tools by keyword/capability.
+    """Searches registered agent tools by keyword or capability description.
+
+    Args:
+        query: Keyword or search phrase to match against available tool names and capability descriptions.
+
+    Returns:
+        Formatted string listing matching tools and their capability summaries.
     """
     tools_catalog = {
         "file_read": "Reads file contents with line offset and limit.",
         "file_edit": "Performs exact string matching replacement in local files.",
         "file_writer": "Creates or overwrites files on local disk.",
+        "notebook_edit": "Edits cells inside Jupyter notebooks (.ipynb).",
         "bash_command": "Executes shell commands with timeout and exit codes.",
         "grep_search": "Searches file contents using regex.",
         "glob_search": "Finds files matching glob patterns.",
+        "tool_search": "Searches registered agent tools catalog.",
         "web_fetch": "Fetches and parses text/markdown from web URLs.",
-        "web_search": "Performs DuckDuckGo web queries for snippets.",
+        "web_search": "Performs web search prioritizing Tavily API with DuckDuckGo fallback.",
     }
     
     query_lower = query.lower()
@@ -319,6 +405,7 @@ def tool_search(query: str) -> str:
 # =============================================================================
 # Category 4: Web (WebFetch, WebSearch)
 # =============================================================================
+
 class HTMLTextExtractor(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -331,11 +418,18 @@ class HTMLTextExtractor(HTMLParser):
         return " ".join(self.text_chunks)
 
 
-@tool
+class WebFetchInput(BaseModel):
+    url: str = Field(description="Full HTTP or HTTPS web URL string to fetch.")
+
+@tool(args_schema=WebFetchInput)
 def web_fetch(url: str) -> str:
-    """
-    Fetches raw content from an HTTP/HTTPS URL and extracts plain text.
-    Maps directly to Claude Code's WebFetchTool.
+    """Fetches raw web content from an HTTP/HTTPS URL and extracts readable plain text.
+
+    Args:
+        url: Full HTTP or HTTPS web URL string to fetch.
+
+    Returns:
+        Extracted plain text content from the HTML body, truncated to 4000 characters if excessive.
     """
     try:
         req = urllib.request.Request(
@@ -359,31 +453,84 @@ def web_fetch(url: str) -> str:
         return f"WebFetch Error: Failed to fetch '{url}': {str(e)}"
 
 
-@tool
+class WebSearchInput(BaseModel):
+    query: str = Field(description="Search query string to look up on the web.")
+
+@tool(args_schema=WebSearchInput)
 def web_search(query: str) -> str:
+    """Performs web search prioritizing Tavily Search API with automatic fallback to DuckDuckGo if Tavily fails or is unavailable.
+
+    Args:
+        query: Search query string to look up on the web.
+
+    Returns:
+        Formatted list of top web search result titles, URLs, and text snippets.
     """
-    Performs web search to retrieve documentation links and text snippets.
-    Uses duckduckgo_search library to bypass captcha verification and get live results.
-    """
+    # 1. Attempt Tavily Search first
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    if tavily_key:
+        try:
+            from langchain_tavily import TavilySearch
+            tavily = TavilySearch(max_results=5)
+            raw_res = tavily.invoke(query)
+            
+            if isinstance(raw_res, dict) and "results" in raw_res:
+                results = raw_res["results"]
+                if results:
+                    formatted = []
+                    for idx, item in enumerate(results, start=1):
+                        title = item.get("title", "Result").strip()
+                        url = item.get("url", "")
+                        content = item.get("content", item.get("snippet", "")).strip()
+                        if url:
+                            formatted.append(f"{idx}. [{title}]({url}): {content}")
+                        else:
+                            formatted.append(f"{idx}. [{title}]: {content}")
+                    return f"[Tavily Search Results for '{query}']\n" + "\n".join(formatted)
+            elif isinstance(raw_res, list) and raw_res:
+                formatted = []
+                for idx, item in enumerate(raw_res, start=1):
+                    if isinstance(item, dict):
+                        title = item.get("title", "Result").strip()
+                        url = item.get("url", "")
+                        content = item.get("content", item.get("snippet", "")).strip()
+                        if url:
+                            formatted.append(f"{idx}. [{title}]({url}): {content}")
+                        else:
+                            formatted.append(f"{idx}. [{title}]: {content}")
+                    else:
+                        formatted.append(f"{idx}. {str(item)}")
+                return f"[Tavily Search Results for '{query}']\n" + "\n".join(formatted)
+        except Exception:
+            # Fallback to DuckDuckGo if Tavily call fails or rate limits
+            pass
+
+    # 2. Fallback to DuckDuckGo Search (DDGS)
+    import warnings
+    warnings.filterwarnings("ignore")
     try:
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
+        try:
+            from ddgs import DDGS
+        except ImportError:
             from duckduckgo_search import DDGS
+
         results = []
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            with DDGS() as ddgs:
-                search_results = list(ddgs.text(query, max_results=5))
-            for idx, r in enumerate(search_results):
-                clean_title = r.get("title", "Result").strip()
-                clean_snippet = r.get("body", "").strip()
+        with DDGS() as ddgs:
+            search_results = list(ddgs.text(query, max_results=5))
+
+        for idx, r in enumerate(search_results):
+            clean_title = r.get("title", "Result").strip()
+            clean_url = r.get("href", r.get("url", ""))
+            clean_snippet = r.get("body", "").strip()
+            if clean_url:
+                results.append(f"{idx+1}. [{clean_title}]({clean_url}): {clean_snippet}")
+            else:
                 results.append(f"{idx+1}. [{clean_title}]: {clean_snippet}")
 
         if not results:
             return f"WebSearch Result for '{query}': No snippets extracted."
 
-        return f"[Web Search Results for '{query}']\n" + "\n".join(results)
+        return f"[DuckDuckGo Search Results (Fallback) for '{query}']\n" + "\n".join(results)
 
     except Exception as e:
-        return f"WebSearch Error: Search failed for query '{query}': {str(e)}"
+        return f"WebSearch Error: Both Tavily and DuckDuckGo searches failed for query '{query}': {str(e)}"

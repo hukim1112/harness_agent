@@ -1,0 +1,32 @@
+{
+  "survey_date": "2026-08",
+  "sample_size": 500,
+  "target_demographic": "서울 거주 25-45세",
+  "results": [
+    {
+      "preference": "스페셜티 원두 카페",
+      "percentage": 42,
+      "avg_spending_won": 6500
+    },
+    {
+      "preference": "디저트 페어링 카페",
+      "percentage": 28,
+      "avg_spending_won": 12000
+    },
+    {
+      "preference": "조용한 작업 카페",
+      "percentage": 18,
+      "avg_spending_won": 5500
+    },
+    {
+      "preference": "테이크아웃 전문",
+      "percentage": 12,
+      "avg_spending_won": 4800
+    }
+  ],
+  "peak_hours": {
+    "weekday": "08:00-10:00, 14:00-16:00",
+    "weekend": "11:00-15:00"
+  },
+  "loyalty_program_interest": 0.73
+}

@@ -8,21 +8,29 @@ def pdf_to_text(pdf_path):
             first_line = f.readline().strip()
             if first_line == "[Virtual PDF Container]":
                 for line in f:
-                    if line.startswith("Content:"):
+                    if line.lower().startswith("content:"):
                         return line.split(":", 1)[1].strip()
     except Exception:
         pass
 
     text = ""
-    # 2. 진짜 바이너리 PDF 파싱 (fitz)
+    # 2. 진짜 바이너리 PDF 파싱 (PyMuPDF / fitz)
     try:
-        import fitz
-        doc = fitz.open(pdf_path)
-        for page in doc:
-            text += page.get_text() + "\n"
-        return text
+        import pymupdf as fitz
     except ImportError:
-        pass
+        try:
+            import fitz
+        except ImportError:
+            fitz = None
+
+    if fitz is not None:
+        try:
+            doc = fitz.open(pdf_path)
+            for page in doc:
+                text += page.get_text() + "\n"
+            return text.strip()
+        except Exception:
+            pass
 
     # 3. pypdf 시도
     try:
@@ -30,11 +38,13 @@ def pdf_to_text(pdf_path):
         reader = pypdf.PdfReader(pdf_path)
         for page in reader.pages:
             text += (page.extract_text() or "") + "\n"
-        return text
+        return text.strip()
     except ImportError:
         pass
 
-    raise RuntimeError("Please install 'pypdf' or 'pymupdf' to parse PDF files.")
+    if not text:
+        raise RuntimeError("Failed to parse PDF. Please ensure 'pymupdf' or 'pypdf' is installed and the file is valid.")
+    return text
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
