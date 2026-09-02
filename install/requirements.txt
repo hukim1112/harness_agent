@@ -58,6 +58,8 @@ matplotlib
 pandas
 openpyxl>=3.1.5
 pyarrow>=22.0.0
+yfinance
+FinanceDataReader
 
 # HTTP, Parsing & Runtime Utilities
 aiohttp
