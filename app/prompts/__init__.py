@@ -1,10 +1,13 @@
-from .chatbot import CHATBOT_SYSTEM_PROMPT
-from .prompt_manager import build_harness_agent_prompt
-from app.middleware.prompt_middleware import harness_agent_prompt_middleware
+from .CHATBOT import CHATBOT_SYSTEM_PROMPT
+from .SCRAPER import SCRAPER_SYSTEM_PROMPT
+from .SUPERVISOR import SUPERVISOR_SYSTEM_PROMPT
+from .ANALYST import ANALYST_SYSTEM_PROMPT
 
 
 __all__ = [
     "CHATBOT_SYSTEM_PROMPT",
-    "harness_agent_prompt_middleware",
-    "build_harness_agent_prompt"
+    "SCRAPER_SYSTEM_PROMPT",
+    "SUPERVISOR_SYSTEM_PROMPT",
+    "ANALYST_SYSTEM_PROMPT",
 ]
+

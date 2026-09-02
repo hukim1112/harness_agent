@@ -1,0 +1,68 @@
+[
+  {
+    "id": "LP-001",
+    "brand": "레노버",
+    "model": "아이디어패드 Slim 3 15IAH8",
+    "price_krw": 599000,
+    "cpu": "Intel Core i5-12450H",
+    "ram_gb": 16,
+    "ssd_gb": 512,
+    "weight_kg": 1.62,
+    "rating": 4.7,
+    "review_count": 420,
+    "category": "가성비/사무용"
+  },
+  {
+    "id": "LP-002",
+    "brand": "LG전자",
+    "model": "2026 그램 프로 16",
+    "price_krw": 1890000,
+    "cpu": "Intel Core Ultra 7 155H",
+    "ram_gb": 32,
+    "ssd_gb": 1024,
+    "weight_kg": 1.19,
+    "rating": 4.9,
+    "review_count": 890,
+    "category": "초경량/프리미엄"
+  },
+  {
+    "id": "LP-003",
+    "brand": "ASUS",
+    "model": "ROG 제피러스 G14",
+    "price_krw": 2150000,
+    "cpu": "AMD Ryzen 9 8945HS",
+    "gpu": "RTX 4060",
+    "ram_gb": 32,
+    "ssd_gb": 1024,
+    "weight_kg": 1.5,
+    "rating": 4.8,
+    "review_count": 310,
+    "category": "게이밍/크리에이터"
+  },
+  {
+    "id": "LP-004",
+    "brand": "한성컴퓨터",
+    "model": "올데이롱 TFX5470UC",
+    "price_krw": 689000,
+    "cpu": "AMD Ryzen 5 7530U",
+    "ram_gb": 16,
+    "ssd_gb": 512,
+    "weight_kg": 1.4,
+    "rating": 4.5,
+    "review_count": 180,
+    "category": "가성비/배터리특화"
+  },
+  {
+    "id": "LP-005",
+    "brand": "Apple",
+    "model": "MacBook Air 13 M3",
+    "price_krw": 1590000,
+    "cpu": "Apple M3",
+    "ram_gb": 16,
+    "ssd_gb": 512,
+    "weight_kg": 1.24,
+    "rating": 4.9,
+    "review_count": 1250,
+    "category": "고효율/디자인"
+  }
+]

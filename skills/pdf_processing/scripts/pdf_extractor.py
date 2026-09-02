@@ -22,9 +22,13 @@ def extract_pdf_info(pdf_path):
     except Exception:
         pass
 
-    # 2. 진짜 바이너리 PDF 파싱 (fitz - PyMuPDF)
+    # 2. 진짜 바이너리 PDF 파싱 (PyMuPDF / fitz)
     try:
-        import fitz
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
+
         doc = fitz.open(pdf_path)
         metadata.update({
             "title": doc.metadata.get("title", ""),
@@ -36,28 +40,28 @@ def extract_pdf_info(pdf_path):
         for page in doc:
             text += page.get_text()
         return metadata, text
-    except ImportError:
+    except Exception:
         pass
 
     # 3. pypdf 시도 (폴백)
     try:
         import pypdf
         reader = pypdf.PdfReader(pdf_path)
-        info = reader.metadata
+        info = reader.metadata or {}
         metadata.update({
-            "title": info.title or "",
-            "author": info.author or "",
-            "subject": info.subject or "",
+            "title": getattr(info, "title", "") or "",
+            "author": getattr(info, "author", "") or "",
+            "subject": getattr(info, "subject", "") or "",
             "pages": len(reader.pages),
             "library": "pypdf"
         })
         for page in reader.pages:
             text += page.extract_text() or ""
         return metadata, text
-    except ImportError:
+    except Exception:
         pass
 
-    raise RuntimeError("Please install 'pypdf' or 'pymupdf' to parse PDF files.")
+    raise RuntimeError("Please install 'pymupdf' or 'pypdf' to parse PDF files.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

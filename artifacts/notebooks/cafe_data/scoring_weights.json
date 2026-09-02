@@ -1,0 +1,33 @@
+{
+  "project": "카페 창업 상권 분석",
+  "analyst": "Location Specialist",
+  "criteria": {
+    "foot_traffic": {
+      "weight": 0.3,
+      "direction": "higher_better",
+      "description": "일일 유동인구"
+    },
+    "rent_efficiency": {
+      "weight": 0.25,
+      "direction": "lower_better",
+      "description": "임대료 대비 유동인구 효율"
+    },
+    "competition": {
+      "weight": 0.2,
+      "direction": "lower_better",
+      "description": "경쟁 카페 밀집도"
+    },
+    "income_level": {
+      "weight": 0.15,
+      "direction": "higher_better",
+      "description": "주변 가구 평균 소득"
+    },
+    "accessibility": {
+      "weight": 0.1,
+      "direction": "higher_better",
+      "description": "대중교통 접근성"
+    }
+  },
+  "minimum_score_threshold": 65,
+  "recommendation_count": 2
+}

@@ -1,0 +1,57 @@
+[
+  {
+    "district": "홍대입구",
+    "daily_foot_traffic": 85000,
+    "monthly_rent_per_pyeong": 280000,
+    "competitor_cafes": 47,
+    "avg_household_income_10k_won": 4200,
+    "public_transit_score": 95,
+    "parking": "LOW",
+    "target_age_group": "20-30대",
+    "weekend_traffic_boost": 1.4
+  },
+  {
+    "district": "성수동",
+    "daily_foot_traffic": 62000,
+    "monthly_rent_per_pyeong": 220000,
+    "competitor_cafes": 31,
+    "avg_household_income_10k_won": 4800,
+    "public_transit_score": 78,
+    "parking": "MEDIUM",
+    "target_age_group": "25-35대",
+    "weekend_traffic_boost": 1.6
+  },
+  {
+    "district": "여의도",
+    "daily_foot_traffic": 71000,
+    "monthly_rent_per_pyeong": 350000,
+    "competitor_cafes": 22,
+    "avg_household_income_10k_won": 6200,
+    "public_transit_score": 90,
+    "parking": "HIGH",
+    "target_age_group": "30-45대",
+    "weekend_traffic_boost": 0.5
+  },
+  {
+    "district": "망원동",
+    "daily_foot_traffic": 38000,
+    "monthly_rent_per_pyeong": 150000,
+    "competitor_cafes": 19,
+    "avg_household_income_10k_won": 3800,
+    "public_transit_score": 72,
+    "parking": "MEDIUM",
+    "target_age_group": "25-35대",
+    "weekend_traffic_boost": 1.3
+  },
+  {
+    "district": "삼성역",
+    "daily_foot_traffic": 93000,
+    "monthly_rent_per_pyeong": 420000,
+    "competitor_cafes": 35,
+    "avg_household_income_10k_won": 7100,
+    "public_transit_score": 98,
+    "parking": "HIGH",
+    "target_age_group": "30-45대",
+    "weekend_traffic_boost": 0.4
+  }
+]
