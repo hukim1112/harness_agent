@@ -67,7 +67,7 @@ ls skills/
 
 ### 2단계: 프롬프트 조립기의 자동 스캔 원리 이해하기
 
-우리가 Mission 03에서 구축한 5계층 프롬프트 조립기([`app/middleware/prompt/prompt_assembler.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/instructor/agent_lab/app/middleware/prompt/prompt_assembler.py))는 에이전트 초기화 시 `SkillPromptBuilder`를 호출합니다.
+우리가 Mission 03에서 구축한 5계층 프롬프트 조립기([`app/middleware/prompt/prompt_assembler.py`](app/middleware/prompt/prompt_assembler.py))는 에이전트 초기화 시 `SkillPromptBuilder`를 호출합니다.
 
 `SkillPromptBuilder`는 `skills/` 폴더 내 모든 하위 폴더의 `SKILL.md`를 스캔하여 **상단의 YAML Frontmatter(`name`, `description`)만 추출**한 뒤 다음과 같이 **Layer 2.2**에 동적으로 카탈로그를 조립합니다:
 

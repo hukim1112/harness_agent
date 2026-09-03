@@ -18,15 +18,15 @@
 
 ## 📂 실습 대상 파일
 
-* **로깅 설정 파일**: [`configs/logging.config`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/configs/logging.config)  
+* **로깅 설정 파일**: [`configs/logging.config`](configs/logging.config)  
   👉 감사 로깅 활성화 여부(`logging_enabled`) 및 로그 디렉토리(`log_dir`)를 제어합니다.
-* **관측성 미들웨어**: [`app/middleware/observability/agent_log_tracer.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/app/middleware/observability/agent_log_tracer.py)  
+* **관측성 미들웨어**: [`app/middleware/observability/agent_log_tracer.py`](app/middleware/observability/agent_log_tracer.py)  
   👉 비동기 큐 기반의 감사 궤적 수집 엔진입니다.
-* **에이전트 결합 파일**: [`app/agents/main_agent.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/app/agents/main_agent.py)  
+* **에이전트 결합 파일**: [`app/agents/main_agent.py`](app/agents/main_agent.py)  
   👉 `logging.config`에 따라 `AgentLogTracer`를 미들웨어 파이프라인의 최우선 순위로 마운트합니다.
-* **세션 로그 분석기**: [`app/utils/log_analyzer.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/app/utils/log_analyzer.py)  
+* **세션 로그 분석기**: [`app/utils/log_analyzer.py`](app/utils/log_analyzer.py)  
   👉 적재된 JSONL 로그를 파싱하여 통계 대시보드를 출력하는 유틸리티입니다.
-* **자동화 검증 스크립트**: [`tests/test_mission07.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/tests/test_mission07.py)
+* **자동화 검증 스크립트**: [`tests/test_mission07.py`](tests/test_mission07.py)
 
 ---
 
@@ -34,7 +34,7 @@
 
 ### 1단계: `configs/logging.config` 활성화하기
 
-[`configs/logging.config`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/configs/logging.config) 파일을 열고 `"logging_enabled": true`로 변경합니다:
+[`configs/logging.config`](configs/logging.config) 파일을 열고 `"logging_enabled": true`로 변경합니다:
 
 ```json
 {
