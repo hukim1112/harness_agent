@@ -15,13 +15,13 @@
 
 ## 📂 실습 대상 파일
 
-* **가드레일 설정 파일**: [`configs/guardrail.config`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/configs/guardrail.config)  
+* **가드레일 설정 파일**: [`configs/guardrail.config`](configs/guardrail.config)  
   👉 가드레일 활성화 여부(`guardrail_enabled`), 입력 보안 모드, 주제 차단 목록(`blocked_topics`)을 제어합니다.
-* **미들웨어 구현체**: [`app/middleware/guardrails/guardrails.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/app/middleware/guardrails/guardrails.py)  
+* **미들웨어 구현체**: [`app/middleware/guardrails/guardrails.py`](app/middleware/guardrails/guardrails.py)  
   👉 `InputSafetyGuardrail` 및 `TopicAlignmentGuardrail` 클래스가 구현되어 있습니다.
-* **에이전트 결합 파일**: [`app/agents/main_agent.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/app/agents/main_agent.py)  
+* **에이전트 결합 파일**: [`app/agents/main_agent.py`](app/agents/main_agent.py)  
   👉 `guardrail.config`에 따라 가드레일 미들웨어를 동적으로 파이프라인에 주입합니다.
-* **자동화 검증 스크립트**: [`tests/test_mission06.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/tests/test_mission06.py)
+* **자동화 검증 스크립트**: [`tests/test_mission06.py`](tests/test_mission06.py)
 
 ---
 
@@ -29,7 +29,7 @@
 
 ### 1단계: `configs/guardrail.config` 활성화하기
 
-[`configs/guardrail.config`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/configs/guardrail.config) 파일을 열고 `"guardrail_enabled": true`로 변경합니다:
+[`configs/guardrail.config`](configs/guardrail.config) 파일을 열고 `"guardrail_enabled": true`로 변경합니다:
 
 ```json
 {

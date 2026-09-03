@@ -20,13 +20,13 @@
 
 ## 📂 실습 대상 파일
 
-* **런타임 설정 파일**: [`configs/hitl.config`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/configs/hitl.config)  
+* **런타임 설정 파일**: [`configs/hitl.config`](configs/hitl.config)  
   👉 HITL 활성화 여부(`hitl_enabled`) 및 인터럽트 대상 도구(`interrupt_on`)를 제어합니다.
-* **에이전트 정의 파일**: [`app/agents/main_agent.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/app/agents/main_agent.py)  
+* **에이전트 정의 파일**: [`app/agents/main_agent.py`](app/agents/main_agent.py)  
   👉 `active_tools`에 `roll_dice`를 포함하고, `HumanInTheLoopMiddleware`를 동적으로 마운트합니다.
-* **웹 프론트엔드 연동**: [`app/chainlit_ui.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/app/chainlit_ui.py)  
+* **웹 프론트엔드 연동**: [`app/chainlit_ui.py`](app/chainlit_ui.py)  
   👉 SSE 스트림을 통해 `__interrupt__` 이벤트를 수신하면 `cl.AskActionMessage`로 인터랙티브 버튼을 띄웁니다.
-* **자동화 검증 스크립트**: [`tests/test_mission05.py`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/tests/test_mission05.py)
+* **자동화 검증 스크립트**: [`tests/test_mission05.py`](tests/test_mission05.py)
 
 ---
 
@@ -34,7 +34,7 @@
 
 ### 1단계: `configs/hitl.config` 활성화하기
 
-[`configs/hitl.config`](file:///c:/Users/hyoun/Desktop/working_project/harness_lecture/main/agent_lab/configs/hitl.config) 파일을 열고 `"hitl_enabled": true`로 변경합니다:
+[`configs/hitl.config`](configs/hitl.config) 파일을 열고 `"hitl_enabled": true`로 변경합니다:
 
 ```json
 {
