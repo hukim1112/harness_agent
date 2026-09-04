@@ -1,9 +1,9 @@
-# 🎯 Mission 00: 서버 & Chainlit UI 구동 및 기본 하네스 4대 요소 체감하기
+# 🎯 Mission 00: 서버 & Chainlit UI 구동 및 에이전트 기본 하네스 구조 체감하기
 
 에이전트 하네스 엔지니어링(Harness Engineering)의 첫걸음에 오신 것을 환영합니다!  
-하네스(Harness)란 LLM 모델 단독으로는 수행할 수 없는 **상태 관리, 도구 제어, 메모리 영속성, UI 연동**을 안전하고 견고하게 감싸주는 실행 환경(Scaffolding)을 의미합니다.
+하네스(Harness)란 LLM 모델 단독으로는 수행할 수 없는 **상태 관리(프롬프트), 도구 제어(도구), 메모리 영속성(단기기억), 서비스/UI 연동(프로필)**을 안전하고 견고하게 감싸주는 실행 환경(Scaffolding)을 의미합니다.
 
-본 미션에서는 에이전트의 가장 기본이 되는 **최소 기능 하네스(Minimum Viable Harness)**가 탑재된 `chatbot` 에이전트를 가동하고, FastAPI 서버와 Chainlit UI 환경에서 직접 대화를 나누며 하네스의 4대 핵심 요소를 체감합니다.
+본 미션에서는 에이전트의 가장 기본이 되는 **최소 기능 하네스(Minimum Viable Harness)**가 탑재된 `chatbot` 에이전트를 가동하고, FastAPI 서버와 Chainlit UI 환경에서 직접 대화를 나누며 **에이전트 3대 코어 요소(프롬프트·도구·메모리)**와 **서비스 연동 메타데이터(프로필)**가 조립되는 하네스 구조를 체감합니다.
 
 ---
 
@@ -11,39 +11,50 @@
 
 | 파일 경로 | 역할 | 실습 중 관찰 및 확인할 내용 |
 | :--- | :--- | :--- |
-| `app/agents/chatbot.py` | 에이전트 팩토리 | 하네스 4대 기본 요소(프로필, 프롬프트, 도구, 단기기억) 코드 구조 확인 |
+| `app/agents/chatbot.py` | 에이전트 팩토리 | 3대 코어 요소(프롬프트, 도구, 단기기억) 및 서비스 메타데이터(프로필) 조립 구조 확인 |
 | `app/prompts/CHATBOT.py` | 시스템 프롬프트 | 고양이 페르소나 및 응답 제약사항 정의 |
 | `app/server.py` | FastAPI 백엔드 서버 | `app/agents/` 디렉토리 자동 스캔 및 SSE 스트리밍 서빙 |
 | `app/chainlit_ui.py` | Chainlit 프론트엔드 UI | 서버에서 에이전트 프로필을 동적으로 불러와 렌더링 |
 
 ---
 
-## 🧩 에이전트를 지탱하는 기본 하네스 4대 요소
+## 🧩 에이전트 코어 3요소와 서비스 인터페이스 (하네스 구조)
 
-`app/agents/chatbot.py` 파일을 열어보면 에이전트가 다음 4가지 핵심 하네스 요소로 조립되어 있음을 확인할 수 있습니다.
+`app/agents/chatbot.py` 파일을 열어보면 에이전트가 **에이전트의 본질적인 3대 코어 요소(프롬프트, 도구, 메모리)**와 이를 **웹 서비스 및 UI에 연동하기 위한 메타데이터(프로필)**로 조립되어 있음을 확인할 수 있습니다.
 
 ```mermaid
 graph TD
-    subgraph Agent Harness (chatbot.py)
-        A["1. Agent Profile (AGENT_METADATA)"] --> UI["UI 드롭다운 및 설명 표출"]
-        B["2. System Prompt (CHATBOT_SYSTEM_PROMPT)"] --> P["고양이 페르소나 & 파일 규칙"]
-        C["3. Tools (active_tools)"] --> T["에이전트가 실행 가능한 도구 집합"]
-        D["4. Short-term Memory (AsyncSqliteSaver)"] --> M["대화 스레드별 체크포인트 영속 저장"]
+    subgraph Agent Core Elements
+        B["1. System Prompt (CHATBOT_SYSTEM_PROMPT)"] --> P["역할/페르소나 & 행동 규칙 규정"]
+        C["2. Tools (active_tools)"] --> T["에이전트 실행 가능 도구 집합"]
+        D["3. Short-term Memory (AsyncSqliteSaver)"] --> M["대화 스레드별 체크포인트 영속 저장"]
     end
+
+    subgraph Service Harness Interface
+        A["4. Service Metadata (AGENT_METADATA)"] --> UI["FastAPI 라우팅 및 UI 드롭다운 표출"]
+    end
+
     LLM["LLM (Gemini / Claude / GPT)"] --- B
-    Harness["Compiled StateGraph"] --> Server["FastAPI :8000"]
+    Harness["Compiled StateGraph + Metadata"] --> Server["FastAPI :8000"]
     Server --> Chainlit["Chainlit UI :8080"]
 ```
 
-1. **에이전트 프로필 (`AGENT_METADATA`)**:
-   - `name`: 시스템 내부 식별자 및 URL 경로 (`/agents/chatbot/invoke`)
+> [!NOTE]
+> 학계와 업계에서 통용되는 에이전트의 본질적 3대 요소는 **프롬프트(역할/지침), 도구(행동/실행), 메모리(상태/기억)**입니다.  
+> 여기에 실제 프로덕션 환경에서 서버(FastAPI)가 에이전트를 자동 식별(Discovery)하고 웹 UI(Chainlit)와 연동하기 위해 **에이전트 메타데이터(프로필)**를 덧붙여 최소 실행 단위(Minimum Viable Harness)를 구성합니다.
+
+### 1. 에이전트 본질 3대 코어 요소
+1. **시스템 프롬프트 (`CHATBOT_SYSTEM_PROMPT`)**:
+   - 에이전트의 역할(친근한 고양이 페르소나), 응답 언어(한국어), 산출물 저장 규칙(`artifacts/` 하위)을 규정하여 모델의 행동과 출력을 통제
+2. **단기 기억 (`AsyncSqliteSaver` 체크포인터)**:
+   - 각 대화 세션(`thread_id`)의 메시지 히스토리를 SQLite DB(`app/database/checkpoints.db`)에 지속적으로 스냅샷 저장하여 멀티턴 대화 맥락 유지 및 세션 격리
+3. **도구 (`active_tools`)**:
+   - LLM이 직접 수행할 수 없는 외부 연산이나 상호작용(계산, 파일 입출력, 웹 검색 등)을 모델이 스스로 판단하여 호출할 수 있는 실행 함수 집합
+
+### 2. 서비스 연동 인터페이스 (하네스 메타데이터)
+4. **에이전트 프로필 (`AGENT_METADATA`)**:
+   - `name`: 시스템 내부 식별자 및 API 라우팅 경로 (`/agents/chatbot/invoke`)
    - `description`: Chainlit UI 상단 프로필 선택 메뉴에 노출되는 설명문
-2. **시스템 프롬프트 (`CHATBOT_SYSTEM_PROMPT`)**:
-   - 에이전트의 역할(친근한 고양이 페르소나), 응답 언어(한국어), 산출물 저장 규칙(`artifacts/` 하위)을 규정
-3. **단기 기억 (`AsyncSqliteSaver` 체크포인터)**:
-   - 각 대화 세션(`thread_id`)의 메시지 히스토리를 SQLite DB(`app/database/checkpoints.db`)에 지속적으로 스냅샷 저장하여 멀티턴 대화 맥락 유지
-4. **도구 (`active_tools`)**:
-   - LLM이 호출할 수 있는 함수 목록 (파일 읽기/쓰기, 웹 검색 등)
 
 ---
 
@@ -78,7 +89,7 @@ chainlit run app/chainlit_ui.py --port 8080
 
 ---
 
-### 3단계: 하네스 4대 요소 동작 검증 대화 나누기
+### 3단계: 하네스 에이전트 동작 검증 대화 나누기
 
 이제 대화창에 메시지를 입력하면서 각 하네스 요소가 어떻게 작동하는지 검증합니다.
 
