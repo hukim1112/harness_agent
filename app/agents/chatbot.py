@@ -1,11 +1,9 @@
 """
-app/agents/chatbot.py — 기본 4대 하네스 + Mission 01 커스텀 도구 기준 완성본
+app/agents/chatbot.py — 3대 코어 요소 + Mission 01 커스텀 도구 기준 완성본
 
-[하네스 4대 기본 요소]
-1. 에이전트 프로필: AGENT_METADATA (UI 드롭다운 및 레지스트리)
-2. 시스템 프롬프트: CHATBOT_SYSTEM_PROMPT (고양이 페르소나 및 파일 규칙)
-3. 단기 기억: AsyncSqliteSaver (세션/스레드별 대화 히스토리 영속 저장)
-4. 도구: active_tools (범용 10대 도구 + [Mission 01] roll_dice, convert_currency)
+[하네스 구성 요소]
+1. 코어 3요소: 프롬프트(CHATBOT_SYSTEM_PROMPT), 도구(active_tools), 단기기억(AsyncSqliteSaver)
+2. 서비스 인터페이스: AGENT_METADATA (UI 프로필 및 FastAPI 레지스트리)
 """
 
 import os
@@ -19,10 +17,10 @@ from app.tools import tools_chatbot
 from app.tools.custom_tools import roll_dice, convert_currency
 from app.utils.context import AgentContext
 
-# 1. 에이전트 프로필
+# 1. 서비스 메타데이터 (FastAPI 레지스트리 및 Chainlit UI ChatProfile 자동 등록)
 AGENT_METADATA = {
     "name": "chatbot",
-    "description": "기본 4대 하네스와 커스텀 도구(주사위/환율)가 완결 탑재된 고양이 챗봇"
+    "description": "3대 코어(프롬프트, 도구, 단기메모리)와 커스텀 도구(주사위/환율)가 완결 탑재된 고양이 챗봇"
 }
 
 
