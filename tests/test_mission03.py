@@ -146,12 +146,21 @@ async def run_prompt_and_memory_test():
     print(assembled_prompt)
     print("=" * 80)
 
-    # 리소스 정리
+    # 리소스 정리 및 임시 DB 파일 삭제
     conn = getattr(agent, "checkpointer_conn", None)
     if conn:
         await conn.close()
-    if epi_store._conn:
-        await epi_store._conn.close()
+    agent_epi = getattr(agent, "episodic_store", None)
+    if agent_epi:
+        await agent_epi.close()
+    await epi_store.close()
+    for ext in ("", "-wal", "-shm"):
+        p = test_epi_path + ext
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
 
     print("\n🎉 [Mission 03] 모든 하네스(프롬프트 조립 + 계층형 메모리) 검증 100% 통과!")
     return True
