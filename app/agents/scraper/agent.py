@@ -38,7 +38,8 @@ SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 AGENT_METADATA = {
     "name": "scraper",
-    "description": "사이트 분석 + 크롤링 코드 생성/실행 + 데이터 수집을 수행하는 Scraper 에이전트"
+    "description": "사이트 분석 + 크롤링 코드 생성/실행 + 데이터 수집을 수행하는 Scraper 에이전트",
+    "roles": ["main", "sub"],  # main: UI 대화 대상 / sub: Supervisor 위임 대상
 }
 
 

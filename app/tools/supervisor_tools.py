@@ -99,6 +99,18 @@ def _build_subagent_message(
 # list_sub_agents Tool
 # =============================================================================
 
+SUB_AGENT_ROLE = "sub"
+
+
+async def _get_sub_agents(client: AsyncAgentClient) -> List[dict]:
+    """Agent Registry에서 AGENT_METADATA["roles"]에 'sub'가 포함된 에이전트만 반환합니다."""
+    agents = await client.get_agents()
+    return [
+        a for a in (agents or [])
+        if isinstance(a, dict) and SUB_AGENT_ROLE in (a.get("roles") or [])
+    ]
+
+
 @tool
 async def list_sub_agents() -> str:
     """Returns the list of specialist sub-agents currently available on the server.
@@ -115,16 +127,15 @@ async def list_sub_agents() -> str:
     """
     client = get_subagent_client()
     try:
-        agents = await client.get_agents()
+        agents = await _get_sub_agents(client)
         if not agents:
             return "No sub-agents are currently registered on the server."
 
         lines = ["Available sub-agents:"]
         for agent in agents:
-            if isinstance(agent, dict):
-                name = agent.get("name", "unknown")
-                desc = agent.get("description", "No description provided.")
-                lines.append(f"  - {name}: {desc}")
+            name = agent.get("name", "unknown")
+            desc = agent.get("description", "No description provided.")
+            lines.append(f"  - {name}: {desc}")
         return "\n".join(lines)
     except Exception as e:
         return f"[ERROR: Failed to query agent registry — {str(e)}]"
@@ -241,14 +252,14 @@ async def invoke_sub_agent(
 
     client = get_subagent_client()
 
-    # 2. Agent Registry 동적 조회 — 유효하지 않은 role 즉시 차단
+    # 2. Agent Registry 동적 조회 — sub 역할이 없는 에이전트(main_agent, chatbot 등)는 즉시 차단
     try:
-        available_agents = await client.get_agents()
-        agent_names = [a.get("name") for a in available_agents if isinstance(a, dict)]
+        available_agents = await _get_sub_agents(client)
+        agent_names = [a.get("name") for a in available_agents]
         if subagent_role not in agent_names:
             return (
-                f"[BLOCKER: Unknown subagent_role '{subagent_role}'. "
-                f"Available agents on server: {agent_names}]"
+                f"[BLOCKER: Unknown or non-delegatable subagent_role '{subagent_role}'. "
+                f"Available sub-agents on server: {agent_names}]"
             )
     except Exception as e:
         return f"[BLOCKER: Failed to query agent registry — {str(e)}]"

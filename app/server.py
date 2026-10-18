@@ -413,6 +413,8 @@ def api_list_agents():
             continue
 
         description = f"Runtime loaded {agent_name} agent"
+        # roles 미표기 에이전트는 UI 대화 전용(main)으로 간주 — 서브에이전트 위임 대상에 실수로 노출되지 않도록
+        default_roles = ["main"]
         try:
             if module_path in sys.modules:
                 module = sys.modules[module_path]
@@ -423,12 +425,15 @@ def api_list_agents():
             if metadata and isinstance(metadata, dict):
                 name = metadata.get("name", agent_name)
                 description = metadata.get("description", description)
-                available_agents.append({"name": name, "description": description})
+                roles = metadata.get("roles") or default_roles
+                if isinstance(roles, str):
+                    roles = [roles]
+                available_agents.append({"name": name, "description": description, "roles": list(roles)})
             else:
-                available_agents.append({"name": agent_name, "description": description})
+                available_agents.append({"name": agent_name, "description": description, "roles": default_roles})
         except Exception as scan_err:
             logger.warning(f"⚠️ Failed to parse metadata for {agent_name}: {scan_err}")
-            available_agents.append({"name": agent_name, "description": description})
+            available_agents.append({"name": agent_name, "description": description, "roles": default_roles})
 
     return available_agents
 

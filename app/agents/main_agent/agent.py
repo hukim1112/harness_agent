@@ -82,7 +82,8 @@ SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 # 1. 에이전트 프로필
 AGENT_METADATA = {
     "name": "main_agent",
-    "description": "하네스 기능을 연결할 메인 오케스트레이터 에이전트"
+    "description": "하네스 기능을 연결할 메인 오케스트레이터 에이전트",
+    "roles": ["main"],  # main: UI 대화 전용 (서브에이전트 위임 대상 제외)
 }
 
 

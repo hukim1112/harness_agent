@@ -144,9 +144,9 @@ harness_agent/
 │   ├── guardrail.config    #   └── 입력 보안 및 주제 차단 목록 설정
 │   └── logging.config      #   └── 비동기 감사 로그 적재 경로 설정
 ├── app/                    # 🧠 프로덕션 에이전트 시스템 코어
-│   ├── agents/             #   ├── 에이전트 패키지 (chatbot.py, main_agent/, analyst/, scraper/)
+│   ├── agents/             #   ├── 에이전트 패키지 (chatbot.py, main_agent/, analyst/, scraper/ — 각 에이전트별 prompt.py/tools.py 포함)
 │   ├── tools/              #   ├── 내장 도구 및 커스텀 도구 모음 (custom_tools 등)
-│   ├── prompts/            #   ├── 시스템 프롬프트 및 지침서 (SUPERVISOR, ANALYST, SCRAPER 등)
+│   ├── prompts/            #   ├── 공용 스킬 실행 지침서 (SKILL.md)
 │   ├── middleware/         #   ├── 하네스 미들웨어 모음
 │   │   ├── memory/         #   │   └── 시맨틱/에피소딕 계층형 메모리 미들웨어
 │   │   ├── prompt/         #   │   └── Claude Code 5-Layer 프롬프트 조립기
