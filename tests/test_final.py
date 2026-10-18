@@ -390,6 +390,15 @@ async def run_final_test():
 
 
 if __name__ == "__main__":
-    success = asyncio.run(run_final_test())
-    sys.stdout.flush()
-    os._exit(0 if success else 1)
+    import traceback
+    success = False
+    try:
+        success = asyncio.run(run_final_test())
+    except AssertionError as e:
+        print(f"\n{e}")
+    except Exception:
+        traceback.print_exc()
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0 if success else 1)
