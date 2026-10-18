@@ -79,19 +79,25 @@ async def run_mission07_test():
         context_schema=AgentContext,
     )
 
+    import uuid
+    run_id = uuid.uuid4().hex[:6]
+    test_uid = f"test_obs_{run_id}"
+
     # 3. 에이전트 실행 (도구 호출 포함)
     print("\n  [실행 1] 관측 대상 에이전트 호출 (도구 격발 포함)...")
-    session_id_1 = "session_obs_demo_001"
+    session_id_1 = f"session_obs_demo_1_{run_id}"
     await obs_agent.ainvoke(
         {"messages": [HumanMessage(content="주사위 1개만 굴려줘")]},
-        config={"configurable": {"thread_id": session_id_1}}
+        config={"configurable": {"thread_id": session_id_1, "user_id": test_uid}},
+        context=AgentContext(user_id=test_uid, session_id=session_id_1),
     )
 
     print("  [실행 2] 관측 대상 에이전트 일반 질의 호출...")
-    session_id_2 = "session_obs_demo_002"
+    session_id_2 = f"session_obs_demo_2_{run_id}"
     await obs_agent.ainvoke(
         {"messages": [HumanMessage(content="안녕! 1 + 1은 뭐야?")]},
-        config={"configurable": {"thread_id": session_id_2}}
+        config={"configurable": {"thread_id": session_id_2, "user_id": test_uid}},
+        context=AgentContext(user_id=test_uid, session_id=session_id_2),
     )
 
     # 백그라운드 워커가 디스크에 쓸 때까지 대기
@@ -117,8 +123,13 @@ async def run_mission07_test():
     assert "roll_dice" in stats["tool_usage"], "❌ roll_dice 도구 사용 통계가 누락되었습니다."
     print("  ✅ Test 3 통과: log_analyzer 메트릭 및 통계 집계 검증 완료")
 
-    # 6. 실물 대시보드 시각화 출력
+    # 6. 실물 대시보드 시각화 출력 및 임시 로그 파일 정리
     print_log_dashboard(stats)
+    if os.path.exists(test_log_file):
+        try:
+            os.remove(test_log_file)
+        except Exception:
+            pass
 
     print("=" * 70)
     print("🎉 [Mission 07] Logging & Observability (감사 궤적 & 세션 분석) 100% 통과!")
