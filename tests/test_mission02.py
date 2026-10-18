@@ -95,6 +95,15 @@ async def run_main_agent_test():
 
 
 if __name__ == "__main__":
-    success = asyncio.run(run_main_agent_test())
-    sys.stdout.flush()
-    os._exit(0 if success else 1)
+    import traceback
+    success = False
+    try:
+        success = asyncio.run(run_main_agent_test())
+    except AssertionError as e:
+        print(f"\n{e}")
+    except Exception:
+        traceback.print_exc()
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0 if success else 1)

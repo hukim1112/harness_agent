@@ -167,6 +167,22 @@ async def run_prompt_and_memory_test():
 
 
 if __name__ == "__main__":
-    success = asyncio.run(run_prompt_and_memory_test())
-    sys.stdout.flush()
-    os._exit(0 if success else 1)
+    import traceback
+    success = False
+    try:
+        success = asyncio.run(run_prompt_and_memory_test())
+    except AssertionError as e:
+        print(f"\n{e}")
+    except Exception:
+        traceback.print_exc()
+    finally:
+        for ext in ("", "-wal", "-shm"):
+            p = os.path.join(project_root, "app", "database", "test_episodic_verify.db" + ext)
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0 if success else 1)
