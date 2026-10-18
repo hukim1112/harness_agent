@@ -37,9 +37,10 @@ async def run_mission04_test():
     print("🧪 [Mission 04] Progressive Skills 동적 확장 & 카탈로그 검증 시작")
     print("=" * 70)
 
-    # 1. skills/ 디렉토리 내 금융 스킬 존재 확인
-    skills_dir = os.path.join(project_root, "skills")
-    assert os.path.exists(skills_dir), "❌ skills 디렉토리가 존재하지 않습니다."
+    # 1. main_agent 내장 skills/ 디렉토리 내 금융 스킬 존재 확인
+    skills_rel = "app/agents/main_agent/skills"
+    skills_dir = os.path.join(project_root, *skills_rel.split("/"))
+    assert os.path.exists(skills_dir), f"❌ {skills_rel} 디렉토리가 존재하지 않습니다."
 
     installed_skills = [
         d for d in os.listdir(skills_dir)
@@ -48,9 +49,9 @@ async def run_mission04_test():
 
     missing = [s for s in REQUIRED_FINANCIAL_SKILLS if s not in installed_skills]
     assert not missing, (
-        f"❌ skills/ 디렉토리에 필수 금융 스킬이 누락되었습니다: {missing}\n"
-        f"   💡 artifacts/skills_pool/ 에서 skills/ 로 스킬을 복사하세요:\n"
-        f"   명령어: cp -r artifacts/skills_pool/* skills/"
+        f"❌ {skills_rel}/ 디렉토리에 필수 금융 스킬이 누락되었습니다: {missing}\n"
+        f"   💡 artifacts/skills_pool/ 에서 {skills_rel}/ 로 스킬을 복사하세요:\n"
+        f"   명령어: cp -r artifacts/skills_pool/* {skills_rel}/"
     )
 
     # 각 스킬의 SKILL.md 유효성 확인
@@ -58,7 +59,7 @@ async def run_mission04_test():
         skill_md = os.path.join(skills_dir, s, "SKILL.md")
         assert os.path.exists(skill_md), f"❌ '{s}' 스킬 폴더에 SKILL.md 파일이 없습니다: {skill_md}"
 
-    print(f"  ✅ Test 1 통과: skills/ 내 금융 전문 스킬 및 SKILL.md 확인 (현재 탑재: 총 {len(installed_skills)}종)")
+    print(f"  ✅ Test 1 통과: {skills_rel}/ 내 금융 전문 스킬 및 SKILL.md 확인 (현재 탑재: 총 {len(installed_skills)}종)")
 
     # 2. SkillPromptBuilder 스캔 동작 검증
     from app.middleware.prompt.skill_builder import SkillPromptBuilder
@@ -76,14 +77,18 @@ async def run_mission04_test():
     agent = await main_agent.create_agent_executor()
     assert agent is not None, "❌ main_agent 생성 실패"
 
-    # 프롬프트 조립기에서 static content 생성
-    assembler = getattr(agent, "prompt_assembler", None)
-    if not assembler:
-        # main_agent.py 내부에서 assembler 찾기
+    # 프롬프트 조립기에서 static content(L1~L2) 생성 → Layer 2.2에 금융 스킬이 주입되었는지 확인
+    assembler = getattr(agent, "assembler", None)
+    if assembler:
+        static_prompt = assembler.build_static_content()
+        for s in REQUIRED_FINANCIAL_SKILLS:
+            assert s in static_prompt, f"❌ main_agent Layer 2.2 카탈로그에 '{s}' 스킬이 주입되지 않았습니다."
+    else:
+        # main_agent/agent.py 내부에서 assembler 사용 여부 확인
         import inspect
         source = inspect.getsource(main_agent.create_agent_executor)
-        assert "PromptAssembler" in source, "❌ main_agent.py에 PromptAssembler가 사용되지 않았습니다."
-        assert "SkillPromptBuilder" in source, "❌ main_agent.py에 SkillPromptBuilder가 사용되지 않았습니다."
+        assert "PromptAssembler" in source, "❌ main_agent/agent.py에 PromptAssembler가 사용되지 않았습니다."
+        assert "SkillPromptBuilder" in source, "❌ main_agent/agent.py에 SkillPromptBuilder가 사용되지 않았습니다."
 
     # 4. Progressive Skill 실행 필수 도구 확인 (file_read, bash_command)
     tools = getattr(agent, "registered_tools", [])

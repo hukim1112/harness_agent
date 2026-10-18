@@ -85,10 +85,11 @@ missions/
 ├── 01_mission_add_custom_tool.md           # 🛠️ 커스텀 도구(주사위/환율) 구현 및 챗봇 바인딩
 ├── 02_mission_self_recovery_and_subagent.md# 🛡️ 3대 자가 복구 미들웨어 & 서브에이전트 오케스트레이션
 ├── 03_mission_prompt_and_memory.md         # 🧠 Claude Code 프롬프트 조립기 & 백그라운드 에피소딕 메모리
-├── 04_mission_skills.md                    # 🧰 금융 분석 전문 스킬(13종) 동적 카탈로그 주입 & 대시보드
+├── 04_mission_skills.md                    # 🧰 금융 분석 전문 스킬(12종) 동적 카탈로그 주입 & 대시보드
 ├── 05_mission_human_in_the_loop.md         # 🛑 roll_dice 타깃 HITL 권한 게이트 & 웹 대화형 승인/거절
 ├── 06_mission_guardrails.md                # 🛡️ 프롬프트 인젝션(S4) 선제 차단 & 오프토픽 대체 안내
-└── 07_mission_logging_and_observability.md # 📊 비동기 감사 궤적 적재 & 세션 데이터 분석 대시보드
+├── 07_mission_logging_and_observability.md # 📊 비동기 감사 궤적 적재 & 세션 데이터 분석 대시보드
+└── 08_mission_final_integration_test.md    # 🎓 전 과정 통합 졸업 검증 (7/7 E2E 테스트)
 ```
 
 ---
@@ -132,12 +133,13 @@ python -m app.utils.log_analyzer
 | 테스트 파일 | 대응 미션 | 주요 검증 내용 | 실행 명령어 |
 | :--- | :--- | :--- | :--- |
 | **`test_mission01.py`** | Mission 01 | 커스텀 도구 2종 및 `chatbot.py` 바인딩 검증 | `python tests/test_mission01.py` |
-| **`test_mission02.py`** | Mission 02 | `main_agent.py` 자가 복구 미들웨어 3종 & 도구 15종 결합 | `python tests/test_mission02.py` |
+| **`test_mission02.py`** | Mission 02 | `main_agent/agent.py` 자가 복구 미들웨어 3종 & 도구 15종 결합 | `python tests/test_mission02.py` |
 | **`test_mission03.py`** | Mission 03 | 5-Layer 프롬프트 조립 & 메모리 + **실물 시각화** | `python tests/test_mission03.py` |
-| **`test_mission04.py`** | Mission 04 | `skills/` 동적 확장 & Layer 2.2 자동 주입 + **실물 시각화** | `python tests/test_mission04.py` |
+| **`test_mission04.py`** | Mission 04 | `main_agent/skills/` 동적 확장 & Layer 2.2 자동 주입 + **실물 시각화** | `python tests/test_mission04.py` |
 | **`test_mission05.py`** | Mission 05 | HITL (`roll_dice` 타깃 권한 게이트 & 승인/거부 재개) | `python tests/test_mission05.py` |
 | **`test_mission06.py`** | Mission 06 | Guardrails (입력 보안 필터 차단 & 주제 일치 리디렉션) | `python tests/test_mission06.py` |
 | **`test_mission07.py`** | Mission 07 | Logging (`AgentLogTracer` 비동기 적재 & `log_analyzer` 분석) | `python tests/test_mission07.py` |
+| **`test_final.py`** | Mission 08 | 전 과정 통합 졸업 검증 (7/7 E2E 하네스 검증) | `python tests/test_final.py` |
 
 ---
 
@@ -146,7 +148,7 @@ python -m app.utils.log_analyzer
 ```text
 harness_agent/
 ├── notebooks/              # 📗 단계별 핸즈온 실습 노트북 (0~7)
-├── missions/               # 🎯 단계별 프로덕션 미션 가이드 (00~07)
+├── missions/               # 🎯 단계별 프로덕션 미션 가이드 (00~08)
 ├── tests/                  # 🧪 미션별 1:1 매핑 자동화 검증 스크립트
 ├── configs/                # ⚙️ 런타임 하네스 설정 파일 모음
 │   ├── model.config        #   └── 메인/가드레일 LLM 모델 지정
@@ -155,21 +157,22 @@ harness_agent/
 │   ├── guardrail.config    #   └── 입력 보안 및 주제 차단 목록 설정
 │   └── logging.config      #   └── 비동기 감사 로그 적재 경로 설정
 ├── app/                    # 🧠 프로덕션 에이전트 시스템 코어
-│   ├── agents/             #   ├── 에이전트 정의 (chatbot, main_agent, memory_agent 등)
+│   ├── agents/             #   ├── 에이전트 패키지 (chatbot.py, main_agent/, analyst/, scraper/)
 │   ├── tools/              #   ├── 내장 도구 및 커스텀 도구 모음 (custom_tools 등)
-│   ├── prompts/            #   ├── 시스템 프롬프트 및 지침서 (SUPERVISOR, SKILL.md 등)
+│   ├── prompts/            #   ├── 시스템 프롬프트 및 지침서 (SUPERVISOR, ANALYST, SCRAPER 등)
 │   ├── middleware/         #   ├── 하네스 미들웨어 모음
 │   │   ├── memory/         #   │   └── 시맨틱/에피소딕 계층형 메모리 미들웨어
 │   │   ├── prompt/         #   │   └── Claude Code 5-Layer 프롬프트 조립기
+│   │   ├── compaction/     #   │   └── 5-Stage 컨텍스트 압축 & AmnesiaGuard
 │   │   ├── error_control/  #   │   └── 모델 폴백 / 서킷 브레이커 자가 복구 미들웨어
 │   │   ├── guardrails/     #   │   └── InputSafetyGuardrail & TopicAlignmentGuardrail
 │   │   └── observability/  #   │   └── AgentLogTracer 비동기 감사 로거 및 시각화기
-│   ├── utils/              #   ├── 모델 팩토리, 메시지 유틸, log_analyzer 유틸
+│   ├── utils/              #   ├── 모델 팩토리, 세션 워크스페이스 격리, log_analyzer 유틸
 │   ├── server.py           #   ├── FastAPI 에이전트 API 서빙 서버 (SSE 스트리밍)
 │   ├── chainlit_ui.py      #   ├── Chainlit 웹 인터랙티브 채팅 프론트엔드
 │   └── client.py           #   └── 터미널 대화형 CLI 클라이언트
-├── skills/                 # 🧰 Progressive Skills 패키지 모음 (금융 분석 등 13종)
-├── artifacts/              # 📂 메모리 DB, 스킬 풀, 감사 로그 및 파일 적재소
+├── skills/                 # 🧰 공용 Progressive Skills 패키지 (mcp, pdf_processing)
+├── artifacts/              # 📂 사용자/세션별 격리 워크스페이스, 메모리, 스킬 풀 및 로그 적재소
 ├── install/                # 🚀 자동 설치 스크립트 (requirements.txt 포함)
 └── README.md               # 📖 메인 프로젝트 설명서
 ```

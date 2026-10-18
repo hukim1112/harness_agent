@@ -34,7 +34,7 @@ async def run_prompt_and_memory_test():
     # -------------------------------------------------------------------------
     from app.middleware.memory import SemanticMemoryStore
 
-    test_mem_dir = "app/database"
+    test_mem_dir = "artifacts/users/default/memory"
     os.makedirs(test_mem_dir, exist_ok=True)
     sem_store = SemanticMemoryStore(memory_dir=test_mem_dir)
     sem_store.load_from_disk()
@@ -48,7 +48,7 @@ async def run_prompt_and_memory_test():
     # -------------------------------------------------------------------------
     from app.middleware.memory import EpisodicStore
 
-    test_epi_dir = "artifacts/memory"
+    test_epi_dir = "app/database"
     os.makedirs(test_epi_dir, exist_ok=True)
     test_epi_path = os.path.join(test_epi_dir, "test_episodic_verify.db")
     if os.path.exists(test_epi_path):

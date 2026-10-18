@@ -2,7 +2,7 @@
 
 > **🎯 목표**: 정적(Static) 시스템 프롬프트의 한계를 극복하고, Claude Code 표준 **5계층 프롬프트 스택(Prompt Assembler)**과 **계층형 메모리(L3 Semantic & L2 Episodic Memory)**를 결합하여 `main_agent`를 고성능 프로덕션 오케스트레이터로 진화시킵니다.
 > 
-> *(※ 본 미션에서는 `main_agent.py`에 별도의 TODO 주석을 달아두지 않았으므로, 본 가이드의 안내에 따라 필요한 모듈과 코드를 직접 추가해 나갑니다.)*
+> *(※ 본 미션에서는 `app/agents/main_agent/agent.py`에 별도의 TODO 주석을 달아두지 않았으므로, 본 가이드의 안내에 따라 필요한 모듈과 코드를 직접 추가해 나갑니다.)*
 
 ---
 
@@ -10,7 +10,7 @@
 
 | 파일 경로 | 역할 | 실습 내용 |
 | :--- | :--- | :--- |
-| `app/agents/main_agent.py` | 메인 에이전트 | 5계층 프롬프트 조립기 및 L2/L3 계층형 메모리 결합 (수정 대상) |
+| `app/agents/main_agent/agent.py` | 메인 에이전트 | 5계층 프롬프트 조립기 및 L2/L3 계층형 메모리 결합 (수정 대상) |
 | `app/middleware/prompt/` | 프롬프트 미들웨어 | `PromptAssembler`, `SkillPromptBuilder`, `create_prompt_assembler_middleware` |
 | `app/middleware/memory/` | 메모리 미들웨어 | `SemanticMemoryStore`, `EpisodicStore`, `MemoryMiddleware` |
 | `tests/test_mission03.py` | 자동화 검증 & 시각화 | 스토어 동작 검증 및 **LLM 주입 5-Layer 프롬프트 실물 시각화** |
@@ -80,9 +80,9 @@ graph TD
 
 ---
 
-## 🛠️ 실습: `app/agents/main_agent.py` 수정 가이드
+## 🛠️ 실습: `app/agents/main_agent/agent.py` 수정 가이드
 
-`main_agent.py` 파일에 아래 단계별 코드를 순서대로 추가/수정합니다.
+`app/agents/main_agent/agent.py` 파일에 아래 단계별 코드를 순서대로 추가/수정합니다.
 
 ### 1단계: 메모리 및 프롬프트 미들웨어 임포트 추가
 파일 상단에 `SemanticMemoryStore`, `EpisodicStore`, `MemoryMiddleware`, `PromptAssembler`, `SkillPromptBuilder`, `create_prompt_assembler_middleware`를 임포트합니다:
@@ -100,21 +100,41 @@ from app.middleware.prompt import (
 ---
 
 ### 2단계: L3 Semantic Store & L2 Episodic Store 초기화
-`create_agent_executor()` 내부에서 체크포인터(L1) 생성 코드 바로 아래에 L3 및 L2 스토어를 초기화합니다:
+`create_agent_executor()` 내부에서 체크포인터(L1) 생성 코드 바로 아래에 [`configs/memory.config`](configs/memory.config)를 읽어 L3 및 L2 스토어를 초기화합니다:
+
+```json
+{
+  "semantic_memory": { "enabled": true, "memory_dir": "./artifacts/users/default/memory", "auto_review": true },
+  "episodic_memory": { "enabled": true, "db_path": "./app/database/episodic.db", "top_k_prefetch": 2, "auto_finalize": true }
+}
+```
+
+| 키 | 의미 |
+| :--- | :--- |
+| `semantic_memory.memory_dir` | `USER.md` / `MEMORY.md` 위치. 기본값이면 사용자별로 `artifacts/users/{user_id}/memory/`에 자동 격리 (다른 경로 지정 시 `{memory_dir}/users/{user_id}/memory/`) |
+| `episodic_memory.db_path` | 과거 세션 요약 + FTS5 인덱스 DB (`user_id` 컬럼으로 사용자 격리) |
+| `episodic_memory.top_k_prefetch` | 매 턴 Layer 4에 자동 주입할 과거 세션 요약 개수 (`0`이면 자동 주입 끔, `session_recall` 도구는 그대로 사용 가능) |
+| `enabled` / `auto_review` / `auto_finalize` | 인출·학습 ON/OFF — 서버가 요청마다 `AgentContext` 플래그로 전달 |
 
 ```python
-    # 4. L3 Semantic Memory Store 초기화 (MEMORY.md / USER.md)
+    # 4. 메모리 설정 로드 (configs/memory.config)
+    memory_cfg = _load_config("./configs/memory.config", {})
+    sem_cfg = memory_cfg.get("semantic_memory", {})
+    epi_cfg = memory_cfg.get("episodic_memory", {})
+
+    # 5. L3 Semantic Memory Store 초기화 (USER.md, MEMORY.md)
+    memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
+    os.makedirs(memory_dir, exist_ok=True)
     semantic_store = SemanticMemoryStore(
-        memory_dir=db_dir,
+        memory_dir=memory_dir,
         memory_char_limit=4000,
         user_char_limit=2000,
     )
     semantic_store.load_from_disk()
 
-    # 5. L2 Episodic Memory Store 초기화 (과거 세션 대화 + SQLite FTS5 인덱싱)
-    episodic_db_dir = "artifacts/memory"
-    os.makedirs(episodic_db_dir, exist_ok=True)
-    episodic_db_path = os.path.join(episodic_db_dir, "episodic.db")
+    # 6. L2 Episodic Memory Store 초기화 (과거 세션 대화 + SQLite FTS5 인덱싱)
+    episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
+    os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
     episodic_store = EpisodicStore(db_path=episodic_db_path)
     await episodic_store.setup()
 ```
@@ -125,16 +145,17 @@ from app.middleware.prompt import (
 스토어를 소유한 `MemoryMiddleware`를 생성하고, 에이전트가 사용할 자율 메모리 도구 2종(`memory`, `session_recall`)을 추출하여 활성 도구 목록에 결합합니다:
 
 ```python
-    # 6. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 + 훅)
+    # 7. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 + 훅)
     memory_mw = MemoryMiddleware(
         semantic_store=semantic_store,
         episodic_store=episodic_store,
         review_llm=llm,
+        top_k=epi_cfg.get("top_k_prefetch", 2),
     )
     memory_tools = memory_mw.get_tools()
 
-    # 7. 전체 도구 세트 통합 (Supervisor 14종 + Memory 2종 = 총 16종)
-    active_tools = list(tools_supervisor) + list(memory_tools)
+    # 8. 전체 도구 세트 통합 (Supervisor 15종 + Memory 2종 + Custom 2종 = 총 19종)
+    active_tools = list(tools_supervisor) + list(memory_tools) + [roll_dice, convert_currency]
 ```
 
 ---
@@ -143,10 +164,13 @@ from app.middleware.prompt import (
 스킬 카탈로그 빌더와 5계층 프롬프트 조립기를 구성하고, LangChain AgentMiddleware로 래핑합니다:
 
 ```python
-    # 8. Claude Code 표준 5-Layer Prompt Assembler 구성
+    # 9. Claude Code 표준 5-Layer Prompt Assembler 구성
+    #    - 스킬: 에이전트 내장 skills/ 폴더만 스캔 (SKILLS_DIR = app/agents/main_agent/skills)
+    #    - skills/SKILL.md(스킬 실행 지침)는 Layer 2.2 카탈로그 상단에만 주입
+    skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
     skill_builder = SkillPromptBuilder(
-        skills_dirs=["./skills", "./.agents/skills", "skills", os.path.join(os.getcwd(), "skills")],
-        guidelines_path="app/prompts/SKILL.md" if os.path.exists("app/prompts/SKILL.md") else None,
+        skills_dirs=[str(SKILLS_DIR)],
+        guidelines_path=skill_guidelines,
     )
 
     assembler = PromptAssembler(
@@ -154,7 +178,6 @@ from app.middleware.prompt import (
         tool_schemas=active_tools,
         skill_catalog=skill_builder.assemble,
         l4_docs={},
-        agent_rules_path="app/prompts/SKILL.md" if os.path.exists("app/prompts/SKILL.md") else None,
     )
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 ```
@@ -162,10 +185,10 @@ from app.middleware.prompt import (
 ---
 
 ### 5단계: 미들웨어 파이프라인 결합 (CRITICAL 순서)
-> ⚠️ **순서 주의**: `memory_mw`가 먼저 실행되어야 `recalled_memory` 컨텍스트가 채워지고, `prompt_mw`가 이를 읽어 L4에 주입할 수 있습니다.
+> ⚠️ **순서 주의**: `memory_mw`가 `prompt_mw`보다 바깥(앞)에 위치해야 꺼진 메모리 도구가 먼저 필터링되어 Layer 2.1 도구 스키마에 반영됩니다. (메모리 인출 자체는 `before_agent` 훅에서 수행되어 Layer 4에 주입됩니다.)
 ```python
-    # 9. 통합 미들웨어 파이프라인 (순서 중요: Memory -> Prompt -> Self-Recovery)
-    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gemini-2.5-flash")
+    # 10. 통합 미들웨어 파이프라인 (순서 중요: Memory -> Prompt -> Self-Recovery)
+    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
     middleware = [
         memory_mw,
         prompt_mw,
@@ -185,7 +208,7 @@ from app.middleware.prompt import (
 `create_agent` 호출 시 `system_prompt` 인자를 제거하고(PromptAssemblerMiddleware가 런타임에 주입), 테스트 검증용 참조 속성들을 보존합니다:
 
 ```python
-    # 10. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
+    # 11. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
     main_agent = create_agent(
         model=llm,
         tools=active_tools,
@@ -207,7 +230,7 @@ from app.middleware.prompt import (
 
 ---
 
-## 📋 완성된 `main_agent.py` 전체 코드 (참고용)
+## 📋 완성된 `app/agents/main_agent/agent.py` 전체 코드 (Mission 03 시점 참고용)
 
 <details>
 <summary><b>👉 완성본 코드 펼치기/접기</b></summary>
@@ -215,14 +238,16 @@ from app.middleware.prompt import (
 ```python
 import os
 import json
+from pathlib import Path
 import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 
 from app.utils import init_chat_model
 from app.utils.context import AgentContext
-from app.prompts import SUPERVISOR_SYSTEM_PROMPT
-from app.tools import tools_supervisor
+from .prompt import SUPERVISOR_SYSTEM_PROMPT
+from .tools import tools_supervisor
+from app.tools.custom_tools import roll_dice, convert_currency
 from app.middleware.memory import SemanticMemoryStore, EpisodicStore, MemoryMiddleware
 from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
 from app.middleware.error_control.self_recovery import (
@@ -230,6 +255,9 @@ from app.middleware.error_control.self_recovery import (
     ToolErrorHandlerMiddleware,
     ModelCallLimitMiddleware,
 )
+
+# 에이전트 내장 스킬 폴더 (app/agents/main_agent/skills/)
+SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 AGENT_METADATA = {
     "name": "main_agent",
@@ -247,13 +275,13 @@ def _load_config(path: str, default: dict) -> dict:
     return default
 
 
-async def create_agent_executor():
+async def create_agent_executor(checkpointer=None):
     model_cfg = _load_config("./configs/model.config", {
-        "model_name": "gemini-3.7-flash",
+        "model_name": "gemini-3.8-flash",
         "temperature": 0.0,
     })
     llm = init_chat_model(
-        model=model_cfg.get("model_name", "gemini-3.7-flash"),
+        model=model_cfg.get("model_name", "gemini-3.8-flash"),
         temperature=model_cfg.get("temperature", 0.0)
     )
 
@@ -261,20 +289,29 @@ async def create_agent_executor():
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-    checkpointer = AsyncSqliteSaver(conn)
-    await checkpointer.setup()
+    conn = None
+    if checkpointer is None:
+        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA busy_timeout=5000;")
+        checkpointer = AsyncSqliteSaver(conn)
+        await checkpointer.setup()
 
+    memory_cfg = _load_config("./configs/memory.config", {})
+    sem_cfg = memory_cfg.get("semantic_memory", {})
+    epi_cfg = memory_cfg.get("episodic_memory", {})
+
+    memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
+    os.makedirs(memory_dir, exist_ok=True)
     semantic_store = SemanticMemoryStore(
-        memory_dir=db_dir,
+        memory_dir=memory_dir,
         memory_char_limit=4000,
         user_char_limit=2000,
     )
     semantic_store.load_from_disk()
 
-    episodic_db_dir = "artifacts/memory"
-    os.makedirs(episodic_db_dir, exist_ok=True)
-    episodic_db_path = os.path.join(episodic_db_dir, "episodic.db")
+    episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
+    os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
     episodic_store = EpisodicStore(db_path=episodic_db_path)
     await episodic_store.setup()
 
@@ -282,13 +319,15 @@ async def create_agent_executor():
         semantic_store=semantic_store,
         episodic_store=episodic_store,
         review_llm=llm,
+        top_k=epi_cfg.get("top_k_prefetch", 2),
     )
     memory_tools = memory_mw.get_tools()
-    active_tools = list(tools_supervisor) + list(memory_tools)
+    active_tools = list(tools_supervisor) + list(memory_tools) + [roll_dice, convert_currency]
 
+    skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
     skill_builder = SkillPromptBuilder(
-        skills_dirs=["./skills", "./.agents/skills", "skills", os.path.join(os.getcwd(), "skills")],
-        guidelines_path="app/prompts/SKILL.md" if os.path.exists("app/prompts/SKILL.md") else None,
+        skills_dirs=[str(SKILLS_DIR)],
+        guidelines_path=skill_guidelines,
     )
 
     assembler = PromptAssembler(
@@ -296,11 +335,10 @@ async def create_agent_executor():
         tool_schemas=active_tools,
         skill_catalog=skill_builder.assemble,
         l4_docs={},
-        agent_rules_path="app/prompts/SKILL.md" if os.path.exists("app/prompts/SKILL.md") else None,
     )
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 
-    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gemini-2.5-flash")
+    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
     middleware = [
         memory_mw,
         prompt_mw,
@@ -348,7 +386,7 @@ python tests/test_mission03.py
 ================================================================================
   ✅ Test 1 통과: Semantic Memory Store 로드 성공 (USER 엔트리: 5개, MEMORY 엔트리: 3개)
   ✅ Test 2 통과: Episodic Store FTS5 인덱싱 및 검색 확인 (검색 적중 세션: session_test_arch)
-  ✅ Test 3 통과: main_agent에 메모리 전용 도구(memory, session_recall) 정상 바인딩 (총 16종 도구)
+  ✅ Test 3 통과: main_agent에 메모리 전용 도구(memory, session_recall) 정상 바인딩 (총 19종 도구)
   ✅ Test 4 통과: Claude Code 5-Layer Prompt Assembler 정상 장착 확인
 
 ================================================================================
@@ -393,7 +431,7 @@ FastAPI 서버(`http://localhost:8000`)와 Chainlit(`http://localhost:8080`)을 
    ```
 2. **동작 확인**:
    - 에이전트가 `memory(action="add", target="user", content="Identity: 5-year AI Software Engineer specializing in Python and LangGraph")` 도구를 호출하는지 확인.
-   - `app/database/USER.md` 파일에 해당 내용이 `§` 구분자로 즉시 추가되었는지 확인.
+   - `artifacts/users/default/memory/USER.md` 파일에 해당 내용이 `§` 구분자로 즉시 추가되었는지 확인.
 3. **후속 질문**:
    ```text
    내가 주로 어떤 언어와 프레임워크를 다룬다고 했지?
@@ -414,7 +452,7 @@ FastAPI 서버(`http://localhost:8000`)와 Chainlit(`http://localhost:8080`)을 
 2. **동작 관찰**:
    - 에이전트가 레거시 금융 vs 블록체인 차세대 금융 아키텍처(T+0 원자적 정산, RWA 토큰화, 스마트 컨트랙트 등)를 깊이 있게 브리핑합니다.
    - 응답이 끝나는 즉시 `after_agent` 훅이 발동되어, **백그라운드 데몬 스레드에서 조용히 `finalize_session`을 실행**합니다.
-   - 대화 원문과 요약, 그리고 한/영 이중 키워드(`블록체인`, `금융의 미래`, `T+0`, `RWA` 등)가 SQLite FTS5(`artifacts/memory/episodic.db`)에 영구 색인됩니다 (유저 대기 시간 0ms).
+   - 대화 원문과 요약, 그리고 한/영 이중 키워드(`블록체인`, `금융의 미래`, `T+0`, `RWA` 등)가 SQLite FTS5(`app/database/episodic.db`)에 영구 색인됩니다 (유저 대기 시간 0ms).
 
 ---
 

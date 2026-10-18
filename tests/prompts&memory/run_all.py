@@ -111,7 +111,7 @@ def save_markdown_report(all_suites: list, file_path: str):
         "# 🧪 Prompt & Memory Harness 종합 테스트 결과 리포트",
         "",
         f"- **테스트 일시**: `{now_str}`",
-        f"- **테스트 환경**: Python 3.12 (WSL Ubuntu) + LangChain 1.3.15 + Gemini 3.7 Flash",
+        f"- **테스트 환경**: Python 3.12 (WSL Ubuntu) + LangChain 1.3.15 + Gemini 3.8 Flash",
         f"- **최종 결과**: **{total_passed}/{total_tests} PASS** (성공률 100%)",
         f"- **총 소요 시간**: `{total_time:.2f}초`",
         "",

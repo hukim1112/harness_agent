@@ -45,7 +45,7 @@ class EvaluatorHarness(AgentMiddleware):
     작업 결과 및 궤적(Trajectory)의 오류를 검증하고, 결함 발견 시 model 노드로 롤백하여
     자동 재작업(Self-Correction Rework)을 지시하는 평가 하네스(Evaluator Harness).
     """
-    def __init__(self, max_reworks: int = 2, judge_model_name: str = "gemini-3.7-flash", judge_llm: Optional[Any] = None):
+    def __init__(self, max_reworks: int = 2, judge_model_name: str = "gemini-3.8-flash", judge_llm: Optional[Any] = None):
         self.max_reworks = max_reworks
         self.judge_model_name = judge_model_name
         self.judge_llm = judge_llm or init_chat_model(model=judge_model_name, temperature=0.0)

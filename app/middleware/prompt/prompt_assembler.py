@@ -94,9 +94,13 @@ class PromptAssembler:
 
     # ── Formatting Helpers ──
 
-    def format_tool_capabilities(self) -> str:
-        """Formats L2 tool capabilities sorted alphabetically by name for KV cache consistency."""
-        if not self.tool_schemas:
+    def format_tool_capabilities(self, tools: Optional[list] = None) -> str:
+        """Formats L2 tool capabilities sorted alphabetically by name for KV cache consistency.
+
+        tools가 주어지면(미들웨어가 넘기는 이번 호출의 request.tools) 그 목록을, 없으면 생성 시 tool_schemas를 씁니다.
+        """
+        tool_schemas = self.tool_schemas if tools is None else tools
+        if not tool_schemas:
             return "No registered tools."
 
         def get_tool_name(schema: Any) -> str:
@@ -104,7 +108,7 @@ class PromptAssembler:
                 return schema.get("name", "")
             return getattr(schema, "name", str(schema))
 
-        sorted_tools = sorted(self.tool_schemas, key=get_tool_name)
+        sorted_tools = sorted(tool_schemas, key=get_tool_name)
 
         tool_lines = []
         for idx, tool in enumerate(sorted_tools):
@@ -199,15 +203,17 @@ class PromptAssembler:
 
     # ── Layer Builders ──
 
-    def build_static_content(self) -> str:
+    def build_static_content(self, tools: Optional[list] = None) -> str:
         """Assembles Layers 1~2 + Boundary Marker (Static KV Cache Target)."""
-        tool_str = self.format_tool_capabilities()
+        tool_str = self.format_tool_capabilities(tools)
         skill_str = ""
         if self.skill_catalog:
             raw_skill = self.read_and_truncate_doc(
                 self.skill_catalog, max_lines=300, max_bytes=35000
             )
-            skill_str = f"\n\n---\n## 📦 Layer 2.2: Available Skills Catalog & Execution Policy\n{raw_skill}"
+            # 등록된 스킬이 없으면(빈 카탈로그) L2.2 섹션 자체를 생략
+            if raw_skill.strip():
+                skill_str = f"\n\n---\n## 📦 Layer 2.2: Available Skills Catalog & Execution Policy\n{raw_skill}"
 
         return (
             f"=== Layer 1: System Identity & Core Role ===\n{self.system_rules}\n\n"
@@ -227,12 +233,21 @@ class PromptAssembler:
             f"- Session ID: {session_context.get('session_id', 'unknown')}",
             f"- Host OS: {session_context.get('os', os.name)}",
         ]
+        if "user_id" in session_context and session_context["user_id"]:
+            session_items.append(f"- User ID: {session_context['user_id']}")
         if "user_permission" in session_context:
             session_items.append(f"- User Permission: {session_context['user_permission']}")
         if "active_project" in session_context:
             session_items.append(f"- Active Project: {session_context['active_project']}")
         if "git_status" in session_context:
             session_items.append(f"- Git Branch/Status: {session_context['git_status']}")
+        if "workspace_dir" in session_context and session_context["workspace_dir"]:
+            ws_root = session_context["workspace_dir"]
+            session_items.append(f"- Session Workspace Root: {ws_root}")
+            session_items.append(f"  - Plan Dir (plan_state/extraction_plan): {session_context.get('plan_dir', f'{ws_root}/plan')}")
+            session_items.append(f"  - Scripts Dir (.py scripts): {session_context.get('scripts_dir', f'{ws_root}/scripts')}")
+            session_items.append(f"  - Outputs Dir (data/charts/reports): {session_context.get('outputs_dir', f'{ws_root}/outputs')}")
+            session_items.append(f"  - Logs Dir (audit.jsonl): {session_context.get('logs_dir', f'{ws_root}/logs')}")
 
         l3_sections = [
             "=== Layer 3: Dynamic Session Context ===",
@@ -288,9 +303,9 @@ class PromptAssembler:
 
         return f"{full_l3}\n\n{full_l4}\n\n{full_l5}"
 
-    def build_system_prompt(self, session_context: dict) -> str:
+    def build_system_prompt(self, session_context: dict, tools: Optional[list] = None) -> str:
         """Assembles all 5 layers into a single prompt string."""
-        static_part = self.build_static_content()
+        static_part = self.build_static_content(tools)
         dynamic_part = self.build_dynamic_content(session_context)
         return f"{static_part}\n\n{dynamic_part}"
 
@@ -324,30 +339,81 @@ class PromptAssemblerMiddleware(AgentMiddleware):
 
     def _prepare_messages(self, request) -> list:
         ctx = getattr(request.runtime, "context", None)
+        user_id = getattr(ctx, "user_id", "default") if ctx else "default"
+        session_id = getattr(ctx, "session_id", "unknown") if ctx else "unknown"
+
+        parent_session_id = getattr(ctx, "parent_session_id", "") if ctx else ""
+
+        # Retrieve thread_id / user_id / parent_thread_id from config if available
+        config = getattr(request.runtime, "config", None)
+        if config and isinstance(config, dict):
+            configurable = config.get("configurable", {}) or {}
+            tid = configurable.get("thread_id")
+            if tid:
+                session_id = str(tid)
+            cfg_uid = configurable.get("user_id")
+            if cfg_uid and (not user_id or user_id == "default"):
+                user_id = str(cfg_uid)
+            cfg_ptid = configurable.get("parent_thread_id")
+            if cfg_ptid and not parent_session_id:
+                parent_session_id = str(cfg_ptid)
+
+        exec_info = getattr(request.runtime, "execution_info", None)
+        if exec_info and getattr(exec_info, "thread_id", None):
+            session_id = str(exec_info.thread_id)
+
         session_context = {
             "cwd": getattr(ctx, "cwd", os.getcwd()) if ctx else os.getcwd(),
-            "session_id": getattr(ctx, "session_id", "unknown") if ctx else "unknown",
+            "session_id": session_id,
+            "user_id": user_id,
             "os": os.name,
             "user_permission": getattr(ctx, "user_permission", "GUEST") if ctx else "GUEST",
             "active_project": getattr(ctx, "active_project", "UNKNOWN") if ctx else "UNKNOWN",
             "recalled_memory": getattr(ctx, "recalled_memory", "") if ctx else "",
         }
 
-        # Retrieve thread_id from config if available
-        config = getattr(request.runtime, "config", None)
-        if config and isinstance(config, dict):
-            tid = config.get("configurable", {}).get("thread_id")
-            if tid:
-                session_context["session_id"] = str(tid)
+        # Resolve unified session / sub-agent workspace paths for Layer 3
+        # SSOT: AgentContext.workspace_dir가 실행 시작 시점에 주입되어 있으면 그대로 사용
+        ctx_ws_dir = (getattr(ctx, "workspace_dir", "") or "").strip() if ctx else ""
+        if ctx_ws_dir:
+            ws_root_rel = ctx_ws_dir.rstrip("/")
+            session_context["workspace_dir"] = ws_root_rel
+            session_context["plan_dir"] = f"{ws_root_rel}/plan"
+            session_context["scripts_dir"] = f"{ws_root_rel}/scripts"
+            session_context["outputs_dir"] = f"{ws_root_rel}/outputs"
+            session_context["logs_dir"] = f"{ws_root_rel}/logs"
+        else:
+            try:
+                from app.utils.workspace import resolve_session_workspace
+
+                ws = resolve_session_workspace(
+                    user_id=user_id,
+                    session_id=session_id,
+                    parent_session_id=parent_session_id or None,
+                    ensure_exists=False,
+                )
+                ws_root_rel = ws.rel_root
+                session_context["workspace_dir"] = ws_root_rel
+                session_context["plan_dir"] = ws.rel_plan_dir
+                session_context["scripts_dir"] = ws.rel_scripts_dir
+                session_context["outputs_dir"] = ws.rel_outputs_dir
+                session_context["logs_dir"] = ws.rel_logs_dir
+                if ctx is not None and hasattr(ctx, "workspace_dir"):
+                    ctx.workspace_dir = ws_root_rel
+            except Exception:
+                pass
+
+        # Layer 2.1은 이번 호출에 실제로 바인딩되는 도구로 작성 (바깥 미들웨어가 걸러낸 결과가 반영됨)
+        tools = list(request.tools)
 
         if self.merge_system:
             # Single SystemMessage (L1~L5 All-in-one)
-            full_system_text = self.assembler.build_system_prompt(session_context)
+            full_system_text = self.assembler.build_system_prompt(session_context, tools)
             system_messages = [SystemMessage(content=full_system_text)]
         else:
             # Dual SystemMessage (Static with cache_control + Dynamic)
             static_msg = SystemMessage(
-                content=self.assembler.build_static_content(),
+                content=self.assembler.build_static_content(tools),
                 additional_kwargs={"cache_control": {"type": "ephemeral"}},
             )
             dynamic_msg = SystemMessage(

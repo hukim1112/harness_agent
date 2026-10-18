@@ -19,10 +19,10 @@
 ## 📂 실습 대상 파일
 
 * **로깅 설정 파일**: [`configs/logging.config`](configs/logging.config)  
-  👉 감사 로깅 활성화 여부(`logging_enabled`) 및 로그 디렉토리(`log_dir`)를 제어합니다.
+  👉 감사 로깅 활성화 여부(`logging_enabled`)와, 필요 시 커스텀 로그 디렉토리(`log_dir`, 선택)를 제어합니다.
 * **관측성 미들웨어**: [`app/middleware/observability/agent_log_tracer.py`](app/middleware/observability/agent_log_tracer.py)  
   👉 비동기 큐 기반의 감사 궤적 수집 엔진입니다.
-* **에이전트 결합 파일**: [`app/agents/main_agent.py`](app/agents/main_agent.py)  
+* **에이전트 결합 파일**: [`app/agents/main_agent/agent.py`](app/agents/main_agent/agent.py)  
   👉 `logging.config`에 따라 `AgentLogTracer`를 미들웨어 파이프라인의 최우선 순위로 마운트합니다.
 * **세션 로그 분석기**: [`app/utils/log_analyzer.py`](app/utils/log_analyzer.py)  
   👉 적재된 JSONL 로그를 파싱하여 통계 대시보드를 출력하는 유틸리티입니다.
@@ -38,27 +38,29 @@
 
 ```json
 {
-  "logging_enabled": true,
-  "log_dir": "./artifacts/logs"
+  "logging_enabled": true
 }
 ```
 
+| 설정 | 로그 저장 위치 |
+| :--- | :--- |
+| `log_dir` 미지정 (기본, 권장) | `artifacts/users/{user_id}/sessions/{session_id}/logs/audit.jsonl` (서브에이전트는 `.../subagents/{role}_{id}/logs/audit.jsonl`) |
+| `"log_dir": "./my_logs"` 지정 | `./my_logs/{session_id}/audit.jsonl` |
+
 ---
 
-### 2단계: `app/agents/main_agent.py` 미들웨어 마운트 확인
+### 2단계: `app/agents/main_agent/agent.py` 미들웨어 마운트 확인
 
-`main_agent.py`는 `logging_enabled: true`일 때 `AgentLogTracer`를 미들웨어 파이프라인의 가장 앞단(전체 라이프사이클 캡처)에 마운트합니다:
+`main_agent/agent.py`는 `logging_enabled: true`일 때 `AgentLogTracer`를 미들웨어 파이프라인의 가장 앞단(전체 라이프사이클 캡처)에 마운트합니다:
 
 ```python
-# app/agents/main_agent.py 내부
+# app/agents/main_agent/agent.py 내부
 from app.middleware.observability import AgentLogTracer
 
 logging_cfg = _load_config("./configs/logging.config", {"logging_enabled": False})
 if logging_cfg.get("logging_enabled"):
-    log_dir = logging_cfg.get("log_dir", "./artifacts/logs")
-    os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, "agent_audit_trail.json")
-    middleware.append(AgentLogTracer(log_path=log_path))
+    log_dir = logging_cfg.get("log_dir")
+    middleware.append(AgentLogTracer(log_dir=log_dir) if log_dir else AgentLogTracer())
 ```
 
 ---

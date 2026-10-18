@@ -17,12 +17,13 @@ H-01 (Compactor)의 AutoCompactor/ReactiveCompactor와 쌍으로 동작합니다
 
 import os
 from langchain_core.messages import SystemMessage
-from langchain.agents.middleware import wrap_tool_call, AgentMiddleware
+from langchain.agents.middleware import AgentMiddleware
 
 
 class AmnesiaGuardMiddleware(AgentMiddleware):
     """Tracks recently accessed files and active plans to restore them after context compaction.
-    Limits per-file content to max_file_chars with Head/Tail trimming to prevent token explosion."""
+    Limits per-file content to max_file_chars with Head/Tail trimming to prevent token explosion.
+    Supports both synchronous (wrap_tool_call) and asynchronous (awrap_tool_call) execution."""
 
     def __init__(self, max_restore_files: int = 5, max_file_chars: int = 3000):
         self.max_restore_files = max_restore_files
@@ -118,25 +119,34 @@ class AmnesiaGuardMiddleware(AgentMiddleware):
         )
         return [SystemMessage(content=attachment_text)]
 
+    def _track_tool_request(self, request) -> None:
+        tool_call = getattr(request, "tool_call", None) or {}
+        tool_name = tool_call.get("name", "")
+        args = tool_call.get("args", {})
+        if not isinstance(args, dict):
+            return
 
-def create_amnesia_guard_middleware(amnesia_guard: AmnesiaGuardMiddleware):
-    """Creates a LangChain @wrap_tool_call middleware that automatically intercepts tool calls to track file and plan access."""
-    @wrap_tool_call
-    def amnesia_tool_interceptor(request, handler):
-        tool_name = request.tool_call.get("name", "")
-        args = request.tool_call.get("args", {})
-        
         for key in ["file_path", "path", "filename", "file", "notebook_path"]:
             if key in args and isinstance(args[key], str):
-                amnesia_guard.track_file_access(args[key])
+                self.track_file_access(args[key])
 
         if tool_name in ["update_plan", "create_plan", "set_plan", "enter_plan"]:
             for key in ["plan", "content", "text", "steps"]:
                 if key in args:
                     val = args[key]
                     if isinstance(val, (str, list)):
-                        amnesia_guard.set_active_plan(val)
+                        self.set_active_plan(val)
 
+    def wrap_tool_call(self, request, handler):
+        self._track_tool_request(request)
         return handler(request)
 
-    return amnesia_tool_interceptor
+    async def awrap_tool_call(self, request, handler):
+        self._track_tool_request(request)
+        return await handler(request)
+
+
+def create_amnesia_guard_middleware(amnesia_guard: AmnesiaGuardMiddleware) -> AmnesiaGuardMiddleware:
+    """Returns the AmnesiaGuardMiddleware instance (AgentMiddleware subclass supporting both sync and async tool interception)."""
+    return amnesia_guard
+

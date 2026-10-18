@@ -30,7 +30,7 @@
   - `test_02_semantic_memory.py`: §-구분자 기반 Semantic Memory CRUD, 용량 제한, Frozen Snapshot 검증 (9개 항목)
   - `test_03_episodic_memory.py`: SQLite FTS5 전문 검색, 세션 요약, Anchor 기반 ±window 인출 검증 (8개 항목)
   - `test_04_middleware_tools.py`: MemoryMiddleware 훅 및 `memory`/`session_recall` 도구 통합 검증 (7개 항목)
-  - `test_05_integration.py`: 실전 LLM(Gemini 3.7 Flash) 연동 개인화 QA, 2단계 JIT 회상, 도구 자율 쓰기 검증 (4개 항목)
+  - `test_05_integration.py`: 실전 LLM(Gemini 3.8 Flash) 연동 개인화 QA, 2단계 JIT 회상, 도구 자율 쓰기 검증 (4개 항목)
   - `run_all.py`: 스위트 실행 및 시각화/마크다운 리포트 생성기
 
 ### 2. `compaction/` — 컨텍스트 압축 및 기억 보존 테스트
