@@ -84,11 +84,12 @@ graph TD
 
 `app/agents/main_agent/agent.py` 파일에 아래 단계별 코드를 순서대로 추가/수정합니다.
 
-### 1단계: 메모리 및 프롬프트 미들웨어 임포트 추가
-파일 상단에 `SemanticMemoryStore`, `EpisodicStore`, `MemoryMiddleware`, `PromptAssembler`, `SkillPromptBuilder`, `create_prompt_assembler_middleware`를 임포트합니다:
+### 1단계: 커스텀 도구 및 메모리/프롬프트 미들웨어 임포트 추가
+파일 상단에 Mission 01에서 만든 커스텀 도구(`roll_dice`, `convert_currency`)와 `SemanticMemoryStore`, `EpisodicStore`, `MemoryMiddleware`, `PromptAssembler`, `SkillPromptBuilder`, `create_prompt_assembler_middleware`를 임포트합니다:
 
 ```python
 # 기존 임포트 아래에 추가
+from app.tools.custom_tools import roll_dice, convert_currency
 from app.middleware.memory import SemanticMemoryStore, EpisodicStore, MemoryMiddleware
 from app.middleware.prompt import (
     PromptAssembler,
@@ -142,20 +143,22 @@ from app.middleware.prompt import (
 ---
 
 ### 3단계: MemoryMiddleware 구성 및 도구 바인딩
-스토어를 소유한 `MemoryMiddleware`를 생성하고, 에이전트가 사용할 자율 메모리 도구 2종(`memory`, `session_recall`)을 추출하여 활성 도구 목록에 결합합니다:
+스토어와 훅, 그리고 자율 메모리 도구 2종(`memory`, `session_recall`)을 소유한 `MemoryMiddleware`를 생성하고, 활성 도구 목록(`active_tools`)에 커스텀 도구 2종(`roll_dice`, `convert_currency`)을 결합합니다:
+
+> 💡 **미들웨어 도구 자동 등록 (`AgentMiddleware.tools`)**:  
+> `MemoryMiddleware`는 내부에 `self.tools = [memory, session_recall]`을 보유하고 있습니다. 따라서 `active_tools`에 메모리 도구를 수동으로 추가하지 않아도, `create_agent(..., middleware=[memory_mw, ...])` 호출 시 LangChain이 미들웨어의 `.tools`를 자동으로 수집하여 에이전트 도구 노드(`ToolNode`) 및 `PromptAssembler`의 `request.tools`(Layer 2.1)에 통합 등록합니다!
 
 ```python
-    # 7. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 + 훅)
+    # 7. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 훅)
     memory_mw = MemoryMiddleware(
         semantic_store=semantic_store,
         episodic_store=episodic_store,
         review_llm=llm,
         top_k=epi_cfg.get("top_k_prefetch", 2),
     )
-    memory_tools = memory_mw.get_tools()
 
-    # 8. 전체 도구 세트 통합 (Supervisor 15종 + Memory 2종 + Custom 2종 = 총 19종)
-    active_tools = list(tools_supervisor) + list(memory_tools) + [roll_dice, convert_currency]
+    # 8. 도구 바인딩 (Supervisor 15종 + Custom 2종 = 17종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 19종)
+    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
 ```
 
 ---
@@ -219,6 +222,7 @@ from app.middleware.prompt import (
 
     # 리소스 정리 및 검증용 참조 보존
     main_agent.registered_tools = active_tools
+    main_agent.registered_middlewares = middleware
     main_agent.checkpointer_conn = conn
     main_agent.episodic_store = episodic_store
     main_agent.semantic_store = semantic_store
@@ -261,7 +265,8 @@ SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 AGENT_METADATA = {
     "name": "main_agent",
-    "description": "하네스 기능을 연결할 메인 오케스트레이터 에이전트"
+    "description": "하네스 기능을 연결할 메인 오케스트레이터 에이전트",
+    "roles": ["main"],  # main: UI 대화 전용 (서브에이전트 위임 대상 제외)
 }
 
 
@@ -321,8 +326,7 @@ async def create_agent_executor(checkpointer=None):
         review_llm=llm,
         top_k=epi_cfg.get("top_k_prefetch", 2),
     )
-    memory_tools = memory_mw.get_tools()
-    active_tools = list(tools_supervisor) + list(memory_tools) + [roll_dice, convert_currency]
+    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
 
     skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
     skill_builder = SkillPromptBuilder(
@@ -360,6 +364,7 @@ async def create_agent_executor(checkpointer=None):
     )
 
     main_agent.registered_tools = active_tools
+    main_agent.registered_middlewares = middleware
     main_agent.checkpointer_conn = conn
     main_agent.episodic_store = episodic_store
     main_agent.semantic_store = semantic_store

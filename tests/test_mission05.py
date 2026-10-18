@@ -44,11 +44,21 @@ async def run_mission05_test():
     )
     print("  ✅ Test 1 통과: configs/hitl.config 규격 및 roll_dice 타깃 인터럽트 설정 확인")
 
-    # 2. main_agent 및 roll_dice 도구 바인딩 확인
+    # 2. main_agent 내 roll_dice 도구 및 HumanInTheLoopMiddleware 장착 코드 확인
+    import inspect
     from app.tools.custom_tools import roll_dice
     from app.agents import main_agent
+    from app.agents.main_agent import agent as main_agent_mod
     assert hasattr(main_agent, "create_agent_executor"), "❌ main_agent 모듈이 유효하지 않습니다."
-    print("  ✅ Test 2 통과: main_agent 내 roll_dice 도구 등록 확인")
+    code_lines = [
+        line for line in inspect.getsource(main_agent_mod.create_agent_executor).splitlines()
+        if not line.strip().startswith("#")
+    ]
+    active_code = "\n".join(code_lines)
+    assert "HumanInTheLoopMiddleware" in active_code, (
+        "❌ app/agents/main_agent/agent.py의 create_agent_executor 내부에 HumanInTheLoopMiddleware가 장착되지 않았습니다."
+    )
+    print("  ✅ Test 2 통과: main_agent 내 roll_dice 도구 및 HumanInTheLoopMiddleware 장착 확인")
 
     # 3. HITL 미들웨어가 장착된 에이전트 인스턴스로 인터럽트 검증
     import aiosqlite

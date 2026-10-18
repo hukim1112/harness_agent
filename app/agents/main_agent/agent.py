@@ -67,13 +67,24 @@ async def create_agent_executor(checkpointer=None):
         checkpointer = AsyncSqliteSaver(conn)
         await checkpointer.setup()
 
-    # 4. 미들웨어 파이프라인 (Mission 02에서 Self-Recovery 미들웨어 추가)
+    # 4. 미들웨어 파이프라인
+    #    - Mission 02: Self-Recovery 3종 (ModelFallback, ToolErrorHandler, ModelCallLimit)
+    #    - Mission 03: MemoryMiddleware, PromptAssemblerMiddleware
+    #    - Mission 05: HumanInTheLoopMiddleware (configs/hitl.config)
+    #    - Mission 06: InputSafetyGuardrail, TopicAlignmentGuardrail (configs/guardrail.config)
+    #    - Mission 07: AgentLogTracer (configs/logging.config)
+    #    ※ 전체 순서는 missions/MIDDLEWARE_PIPELINE_REFERENCE.md 참고:
+    #       [1.Logging] -> [2.Guardrails] -> [3.Memory & Prompt] -> [4.HITL] -> [5.Self-Recovery]
     middleware = []
 
-    # 5. 도구 바인딩 (Mission 02에서 tools_supervisor 연결)
+    # 5. 도구 바인딩
+    #    - Mission 02: list(tools_supervisor)
+    #    - Mission 03: list(tools_supervisor) + [roll_dice, convert_currency]
+    #      (※ memory, session_recall 도구는 MemoryMiddleware가 create_agent에 자동 등록)
     active_tools = []
 
     # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
+    #    (※ Mission 03부터는 PromptAssemblerMiddleware가 프롬프트를 주입하므로 system_prompt 인자를 제거합니다)
     main_agent = create_agent(
         model=llm,
         tools=active_tools,
@@ -84,5 +95,6 @@ async def create_agent_executor(checkpointer=None):
     )
 
     main_agent.registered_tools = active_tools
+    main_agent.registered_middlewares = middleware
     main_agent.checkpointer_conn = conn
     return main_agent

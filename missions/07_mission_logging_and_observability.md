@@ -49,19 +49,206 @@
 
 ---
 
-### 2단계: `app/agents/main_agent/agent.py` 미들웨어 마운트 확인
+### 2단계: `app/agents/main_agent/agent.py`에 `AgentLogTracer` 직접 장착하기
 
-`main_agent/agent.py`는 `logging_enabled: true`일 때 `AgentLogTracer`를 미들웨어 파이프라인의 가장 앞단(전체 라이프사이클 캡처)에 마운트합니다:
+`app/agents/main_agent/agent.py`를 열고, `configs/logging.config`가 활성화(`logging_enabled: true`)되었을 때 `AgentLogTracer`를 미들웨어 파이프라인의 **가장 앞단(1순위)**에 마운트합니다.
+
+> 📌 **미들웨어 파이프라인 위치 안내** (상세 순서: [`MIDDLEWARE_PIPELINE_REFERENCE.md`](./MIDDLEWARE_PIPELINE_REFERENCE.md) 참고):  
+> 감사 로깅(`AgentLogTracer`)은 **가드레일에 의해 차단된 요청까지 포함하여 에이전트의 전체 라이프사이클을 빠짐없이 기록**해야 하므로, 반드시 `middleware = []` 직후인 **가장 바깥쪽(`(1) Logging` 위치, `(2) Guardrails` 앞)**에 배치합니다!
+
+1. 파일 상단에 `AgentLogTracer` 임포트를 추가합니다:
+   ```python
+   from app.middleware.observability import AgentLogTracer
+   ```
+
+2. `create_agent_executor()` 내부의 `middleware = []` 바로 아래(가장 앞단)에 **`(1) Logging & Observability`** 블록을 추가합니다:
+   ```python
+   middleware = []
+
+   # (1) Logging & Observability — 전체 실행 흐름 JSONL 감사 로깅 (가장 바깥에 위치!)
+   logging_cfg = _load_config("./configs/logging.config", {"logging_enabled": False})
+   if logging_cfg.get("logging_enabled"):
+       log_dir = logging_cfg.get("log_dir")
+       middleware.append(AgentLogTracer(log_dir=log_dir) if log_dir else AgentLogTracer())
+
+   # (2) Guardrails ...
+   ```
+
+<details>
+<summary><b>👉 최종 완성된 <code>app/agents/main_agent/agent.py</code> 전체 코드 (Mission 07 완료 시점)</b></summary>
 
 ```python
-# app/agents/main_agent/agent.py 내부
+import os
+import json
+from pathlib import Path
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+
+from app.utils import init_chat_model
+from app.utils.context import AgentContext
+from .prompt import SUPERVISOR_SYSTEM_PROMPT
+from .tools import tools_supervisor
+from app.tools.custom_tools import roll_dice, convert_currency
+from app.middleware.memory import SemanticMemoryStore, EpisodicStore, MemoryMiddleware
+from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
+from app.middleware.error_control.self_recovery import (
+    ModelFallbackMiddleware,
+    ToolErrorHandlerMiddleware,
+    ModelCallLimitMiddleware,
+)
+from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
 from app.middleware.observability import AgentLogTracer
 
-logging_cfg = _load_config("./configs/logging.config", {"logging_enabled": False})
-if logging_cfg.get("logging_enabled"):
-    log_dir = logging_cfg.get("log_dir")
-    middleware.append(AgentLogTracer(log_dir=log_dir) if log_dir else AgentLogTracer())
+SKILLS_DIR = Path(__file__).resolve().parent / "skills"
+
+AGENT_METADATA = {
+    "name": "main_agent",
+    "description": "하네스 기능을 연결할 메인 오케스트레이터 에이전트",
+    "roles": ["main"],
+}
+
+
+def _load_config(path: str, default: dict) -> dict:
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default
+
+
+async def create_agent_executor(checkpointer=None):
+    model_cfg = _load_config("./configs/model.config", {
+        "model_name": "gemini-3.8-flash",
+        "temperature": 0.0,
+    })
+    llm = init_chat_model(
+        model=model_cfg.get("model_name", "gemini-3.8-flash"),
+        temperature=model_cfg.get("temperature", 0.0)
+    )
+
+    db_dir = "app/database"
+    os.makedirs(db_dir, exist_ok=True)
+    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
+
+    conn = None
+    if checkpointer is None:
+        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA busy_timeout=5000;")
+        checkpointer = AsyncSqliteSaver(conn)
+        await checkpointer.setup()
+
+    memory_cfg = _load_config("./configs/memory.config", {})
+    sem_cfg = memory_cfg.get("semantic_memory", {})
+    epi_cfg = memory_cfg.get("episodic_memory", {})
+
+    memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
+    os.makedirs(memory_dir, exist_ok=True)
+    semantic_store = SemanticMemoryStore(
+        memory_dir=memory_dir,
+        memory_char_limit=4000,
+        user_char_limit=2000,
+    )
+    semantic_store.load_from_disk()
+
+    episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
+    os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
+    episodic_store = EpisodicStore(db_path=episodic_db_path)
+    await episodic_store.setup()
+
+    memory_mw = MemoryMiddleware(
+        semantic_store=semantic_store,
+        episodic_store=episodic_store,
+        review_llm=llm,
+        top_k=epi_cfg.get("top_k_prefetch", 2),
+    )
+    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
+
+    skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
+    skill_builder = SkillPromptBuilder(
+        skills_dirs=[str(SKILLS_DIR)],
+        guidelines_path=skill_guidelines,
+    )
+
+    assembler = PromptAssembler(
+        system_rules=SUPERVISOR_SYSTEM_PROMPT,
+        tool_schemas=active_tools,
+        skill_catalog=skill_builder.assemble,
+        l4_docs={},
+    )
+    prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
+
+    middleware = []
+
+    # (1) Logging & Observability
+    logging_cfg = _load_config("./configs/logging.config", {"logging_enabled": False})
+    if logging_cfg.get("logging_enabled"):
+        log_dir = logging_cfg.get("log_dir")
+        middleware.append(AgentLogTracer(log_dir=log_dir) if log_dir else AgentLogTracer())
+
+    # (2) Guardrails
+    guardrail_cfg = _load_config("./configs/guardrail.config", {"guardrail_enabled": False})
+    if guardrail_cfg.get("guardrail_enabled"):
+        guard_model = model_cfg.get("model_name", "gemini-3.8-flash")
+        safety_cfg = guardrail_cfg.get("input_safety", {})
+        if safety_cfg.get("enabled", True):
+            middleware.append(InputSafetyGuardrail(
+                model=guard_model,
+                fail_mode=safety_cfg.get("fail_mode", "open"),
+            ))
+        topic_cfg = guardrail_cfg.get("topic_alignment", {})
+        if topic_cfg.get("enabled", True):
+            middleware.append(TopicAlignmentGuardrail(
+                model=guard_model,
+                allowed_topics=topic_cfg.get("allowed_topics"),
+                blocked_topics=topic_cfg.get("blocked_topics"),
+                fail_mode=topic_cfg.get("fail_mode", "open"),
+            ))
+
+    # (3) Memory & Prompt
+    middleware.extend([memory_mw, prompt_mw])
+
+    # (4) Human-in-the-Loop
+    hitl_cfg = _load_config("./configs/hitl.config", {"hitl_enabled": False})
+    if hitl_cfg.get("hitl_enabled"):
+        interrupt_on = hitl_cfg.get("interrupt_on", {})
+        middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+
+    # (5) Self-Recovery
+    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
+    middleware.extend([
+        ModelFallbackMiddleware(
+            max_retries=2,
+            initial_delay=0.5,
+            fallback_model_name=backup_model
+        ),
+        ToolErrorHandlerMiddleware(max_retries=0),
+        ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
+    ])
+
+    main_agent = create_agent(
+        model=llm,
+        tools=active_tools,
+        middleware=middleware,
+        checkpointer=checkpointer,
+        context_schema=AgentContext,
+    )
+
+    main_agent.registered_tools = active_tools
+    main_agent.registered_middlewares = middleware
+    main_agent.checkpointer_conn = conn
+    main_agent.episodic_store = episodic_store
+    main_agent.semantic_store = semantic_store
+    main_agent.assembler = assembler
+    main_agent.memory_middleware = memory_mw
+
+    return main_agent
 ```
+</details>
 
 ---
 
@@ -78,7 +265,7 @@ python tests/test_mission07.py
 ======================================================================
 🧪 [Mission 07] Logging & Observability (감사 궤적 & 세션 분석) 검증 시작
 ======================================================================
-  ✅ Test 1 통과: configs/logging.config 규격 확인 완료
+  ✅ Test 1 통과: configs/logging.config 규격 및 main_agent AgentLogTracer 장착 확인 완료
   ✅ Test 2 통과: 비동기 감사 궤적 적재 확인 (총 3개 레코드 생성)
   ✅ Test 3 통과: log_analyzer 메트릭 및 통계 집계 검증 완료
 
@@ -127,5 +314,6 @@ python tests/test_mission07.py
 
 - [ ] 비동기 감사 로깅(`_AsyncLogWorker`)을 통한 0ms 레이턴시 보존 원리를 이해했다.
 - [ ] `configs/logging.config`에서 `logging_enabled: true`로 활성화했다.
+- [ ] `app/agents/main_agent/agent.py`의 미들웨어 파이프라인 최상단(1순위)에 `AgentLogTracer`를 마운트했다.
 - [ ] `python tests/test_mission07.py`를 실행하여 단위 테스트를 100% 통과했다.
 - [ ] Chainlit UI 대화 후 `python -m app.utils.log_analyzer`를 실행하여 실시간 세션 감사 통계 대시보드를 확인했다.

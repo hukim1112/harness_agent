@@ -47,8 +47,8 @@ sequenceDiagram
 
 ### 1단계: `app/tools/custom_tools.py`에 커스텀 도구 작성하기
 
-`app/tools/custom_tools.py` 파일을 열고, 원하는 도구를 작성합니다.  
-아래 2가지 예시 중 하나를 선택하거나, 완전히 새로운 도구(예: 로또 번호 추첨, 코인 던지기 등)를 작성해도 좋습니다.
+`app/tools/custom_tools.py` 파일을 열고, 아래 **필수 커스텀 도구 2종(`roll_dice`, `convert_currency`)**을 작성합니다.  
+> ⚠️ **주의**: 자동화 검증 스크립트(`test_mission01.py`)와 이후 미션(`Mission 03, 05, 07, 08`)에서 **`roll_dice`와 `convert_currency` 두 함수의 이름과 파라미터 규격을 직접 호출하여 검증**하므로, 두 도구를 모두 필수로 구현해야 합니다. (이 두 가지를 구현한 뒤, 로또 번호 추첨이나 코인 던지기 등 나만의 세 번째 도구를 추가로 더 작성해도 좋습니다!)
 
 ```python
 # app/tools/custom_tools.py
@@ -110,12 +110,21 @@ def convert_currency(amount: float, from_currency: str = "USD", to_currency: str
 `app/agents/chatbot.py` 파일을 열고, 방금 작성한 도구를 임포트하여 `active_tools` 리스트에 등록합니다.
 
 ```python
-# app/agents/chatbot.py 상단 임포트
+# app/agents/chatbot.py
+AGENT_METADATA = {
+    "name": "chatbot",
+    "description": "3대 코어(프롬프트, 도구, 단기메모리)가 탑재된 친근한 고양이 챗봇",
+    "roles": ["main"],  # main: UI 대화 전용 (서브에이전트 위임 대상 제외)
+}
+
+# ... (생략) ...
+
+# 1단계에서 작성한 커스텀 도구 임포트
 from app.tools.custom_tools import roll_dice, convert_currency
 
 # ... (생략) ...
 
-async def create_agent_executor():
+async def create_agent_executor(checkpointer=None):
     # ... (생략) ...
     
     # ---------------------------------------------------------------------------
@@ -130,6 +139,9 @@ async def create_agent_executor():
         checkpointer=checkpointer,
         context_schema=AgentContext
     )
+
+    chatbot_agent.registered_tools = active_tools
+    chatbot_agent.checkpointer_conn = conn
     return chatbot_agent
 ```
 
@@ -188,7 +200,7 @@ python tests/test_mission01.py
 
 ## 🏆 Mission 01 완료 체크리스트
 
-- [ ] `app/tools/custom_tools.py`에 `@tool` 데코레이터를 적용한 커스텀 함수를 1개 이상 작성했다.
+- [ ] `app/tools/custom_tools.py`에 `@tool` 데코레이터를 적용한 필수 커스텀 함수 2종(`roll_dice`, `convert_currency`)을 작성했다.
 - [ ] 함수의 Docstring에 목적, 사용 시점, 인자 설명이 명확하게 작성되었다.
 - [ ] `app/agents/chatbot.py`의 `active_tools` 리스트에 커스텀 도구가 추가되었다.
 - [ ] Chainlit UI에서 사용자의 자연어 요청에 따라 도구가 정상 호출되고 결과가 대화에 반영됨을 확인했다.

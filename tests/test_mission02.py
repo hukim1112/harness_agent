@@ -66,12 +66,21 @@ async def run_main_agent_test():
     print(f"  ✅ Test 4 통과: Self-Recovery 미들웨어 정상 탑재 확인 (활성 노드: {len(nodes)}개)")
 
     # 5. Sub-Agent 및 Planning 도구 바인딩 검증
-    from app.tools import tools_supervisor
+    registered_tools = getattr(agent, "registered_tools", [])
+    if not registered_tools and hasattr(agent, "nodes"):
+        tools_node = agent.nodes.get("tools")
+        bound_node = getattr(tools_node, "bound", tools_node)
+        if bound_node and hasattr(bound_node, "tools_by_name"):
+            registered_tools = list(bound_node.tools_by_name.values())
+
     expected_tool_names = {"invoke_sub_agent", "list_sub_agents", "enter_plan", "task_create"}
-    supervisor_tool_names = {getattr(t, "name", "") for t in tools_supervisor}
-    missing_tools = expected_tool_names - supervisor_tool_names
-    assert not missing_tools, f"❌ tools_supervisor에 필수 도구가 누락되었습니다: {missing_tools}"
-    print(f"  ✅ Test 5 통과: Sub-Agent 위임 및 Planning 핵심 도구 바인딩 확인 ({len(tools_supervisor)}종)")
+    bound_tool_names = {getattr(t, "name", "") for t in registered_tools}
+    missing_tools = expected_tool_names - bound_tool_names
+    assert not missing_tools, (
+        f"❌ main_agent의 active_tools에 필수 도구가 바인딩되지 않았습니다: {missing_tools}\n"
+        f"   app/agents/main_agent/agent.py에서 active_tools = list(tools_supervisor)를 설정하세요."
+    )
+    print(f"  ✅ Test 5 통과: Sub-Agent 위임 및 Planning 핵심 도구 바인딩 확인 (총 {len(registered_tools)}종)")
 
     # 리소스 정리 (SQLite 커넥션 종료)
     conn = getattr(checkpointer, "conn", None)

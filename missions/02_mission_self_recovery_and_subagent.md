@@ -41,7 +41,7 @@ graph LR
 
 ### 2. Sub-Agent Orchestration (전문 에이전트 위임)
 메인 에이전트 혼자서 크롤링, 데이터 분석, 보고서 작성까지 모든 도구를 다 쓰려 하면 컨텍스트가 폭발합니다.  
-Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 전문 에이전트(`scraper`, `analyst`, `chatbot`)에게 독립된 세션으로 작업을 위임한 뒤 요약 보고서만 회수합니다.
+Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `AGENT_METADATA["roles"]`에 `"sub"` 역할이 부여된 전문 에이전트(`scraper`, `analyst`)에게 독립된 세션으로 작업을 위임한 뒤 요약 보고서만 회수합니다. (`main_agent`, `chatbot`처럼 `"roles": ["main"]`만 가진 에이전트는 위임 대상에서 자동 제외됩니다.)
 
 ---
 
@@ -97,7 +97,7 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 �
 
 ### 3단계: Subagent 및 Planning 도구 바인딩
 
-1. 파일 상단에서 패키지 내부의 `tools_supervisor`를 임포트합니다 (또는 이미 임포트되어 있는지 확인합니다):
+1. 파일 상단에 패키지 내부의 `tools_supervisor`가 임포트되어 있는지 확인합니다:
    ```python
    from .tools import tools_supervisor
    ```
@@ -106,6 +106,97 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 �
    active_tools = list(tools_supervisor)
    ```
    > 💡 `tools_supervisor`에는 계획 수립 도구 5종(`enter_plan`, `task_create` 등), 서브에이전트 오케스트레이션 도구 3종(`list_sub_agents`, `invoke_sub_agent`, `get_sub_agent_job_status`), 공통 파일/검색 도구 7종을 합쳐 **총 15종**이 통합되어 있습니다.
+
+<details>
+<summary><b>👉 완성된 <code>app/agents/main_agent/agent.py</code> 전체 코드 (Mission 02 시점 참고용)</b></summary>
+
+```python
+import os
+import json
+from pathlib import Path
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langchain.agents import create_agent
+
+from app.utils import init_chat_model
+from app.utils.context import AgentContext
+from .prompt import SUPERVISOR_SYSTEM_PROMPT
+from .tools import tools_supervisor
+from app.middleware.error_control.self_recovery import (
+    ModelFallbackMiddleware,
+    ToolErrorHandlerMiddleware,
+    ModelCallLimitMiddleware,
+)
+
+SKILLS_DIR = Path(__file__).resolve().parent / "skills"
+
+AGENT_METADATA = {
+    "name": "main_agent",
+    "description": "하네스 기능을 연결할 메인 오케스트레이터 에이전트",
+    "roles": ["main"],  # main: UI 대화 전용 (서브에이전트 위임 대상 제외)
+}
+
+
+def _load_config(path: str, default: dict) -> dict:
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default
+
+
+async def create_agent_executor(checkpointer=None):
+    model_cfg = _load_config("./configs/model.config", {
+        "model_name": "gemini-3.8-flash",
+        "temperature": 0.0,
+    })
+    llm = init_chat_model(
+        model=model_cfg.get("model_name", "gemini-3.8-flash"),
+        temperature=model_cfg.get("temperature", 0.0)
+    )
+
+    db_dir = "app/database"
+    os.makedirs(db_dir, exist_ok=True)
+    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
+
+    conn = None
+    if checkpointer is None:
+        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA busy_timeout=5000;")
+        checkpointer = AsyncSqliteSaver(conn)
+        await checkpointer.setup()
+
+    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
+    middleware = [
+        ModelFallbackMiddleware(
+            max_retries=2,
+            initial_delay=0.5,
+            fallback_model_name=backup_model
+        ),
+        ToolErrorHandlerMiddleware(max_retries=0),
+        ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
+    ]
+
+    active_tools = list(tools_supervisor)
+
+    main_agent = create_agent(
+        model=llm,
+        tools=active_tools,
+        system_prompt=SUPERVISOR_SYSTEM_PROMPT,
+        middleware=middleware,
+        checkpointer=checkpointer,
+        context_schema=AgentContext,
+    )
+
+    main_agent.registered_tools = active_tools
+    main_agent.registered_middlewares = middleware
+    main_agent.checkpointer_conn = conn
+    return main_agent
+```
+</details>
 
 ---
 
@@ -144,7 +235,7 @@ python tests/test_mission02.py
   현재 사용 가능한 서브에이전트 목록을 확인해주고, analyst 에이전트에게 '엔비디아 관련한 최신 소식을 바탕으로 카드 뉴스 형식의 자료로 시각화해줘'라고 위임해줘.
   ```
 * **관찰 포인트**:
-  - `list_sub_agents`가 호출되어 시스템에 등록된 전문 에이전트 목록(`scraper`, `analyst`, `chatbot` 등)을 실시간으로 확인합니다.
+  - `list_sub_agents`가 호출되어 시스템에 등록된 위임 가능 서브에이전트 목록(`scraper`, `analyst`)을 실시간으로 확인합니다.
   - `invoke_sub_agent(subagent_role="analyst", task_instruction="...", run_in_background=True)`가 실행되어 분석 및 시각화 전문 에이전트에게 독립된 서브에이전트 세션(`sub_thread_id`)으로 작업이 위임됩니다.
   - Analyst 서브에이전트가 `html_report` 도구를 호출하여 세션 `outputs/` 폴더에 멋진 반응형 카드뉴스 HTML을 생성하고, 메인 에이전트가 `<Render_HTML>` 태그를 통해 채팅 UI에 즉시 시각화 임베딩하여 보여주는지 확인합니다.
 

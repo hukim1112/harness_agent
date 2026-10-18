@@ -13,7 +13,7 @@ Hooks:
   (메모리 학습 활성화 시 MEMORY.md/USER.md 갱신 및 episodic.db 저장·요약)
 
 Tool Factory:
-- get_tools(): [memory(), session_recall()] 도구를 반환하여 에이전트의 tools 리스트에 명시적으로 결합
+- self.tools: [memory(), session_recall()] 도구를 소유하며, create_agent()가 생성 시 자동으로 에이전트 도구로 주입
   - memory(): 에이전트가 직접 MEMORY.md / USER.md를 관리 (add/replace/remove)
   - session_recall(): Anchor 기반 과거 세션 상세 메시지 인출
   - session_search는 도구로 제공하지 않음 (before_agent가 자동 인출)
@@ -102,7 +102,7 @@ class MemoryMiddleware(AgentMiddleware):
         )
         agent = create_agent(
             model=llm,
-            tools=base_tools + memory_mw.get_tools(),
+            tools=base_tools,          # memory_mw.tools는 create_agent가 자동 등록
             middleware=[memory_mw],
         )
     """
@@ -156,9 +156,12 @@ class MemoryMiddleware(AgentMiddleware):
         # 내부에서 도구 생성 (스토어 바인딩을 미들웨어가 소유)
         self._memory_tool = self._create_memory_tool()
         self._session_recall_tool = self._create_session_recall_tool()
+        # AgentMiddleware.tools — LangChain create_agent()가 생성 시 한 번 읽어 에이전트 도구로 자동 주입합니다
+        # (langchain/agents/factory.py의 middleware_tools 수집 → tools=와 합쳐 등록).
+        self.tools = [self._memory_tool, self._session_recall_tool]
 
     def get_tools(self) -> list:
-        """에이전트 생성 시 바인딩할 메모리 도구 목록 반환.
+        """메모리 도구 목록 반환 (create_agent 사용 시에는 self.tools를 통해 자동 등록됨).
 
         Returns:
             [memory_tool, session_recall_tool]
@@ -264,6 +267,7 @@ class MemoryMiddleware(AgentMiddleware):
             - Write entries in English for search efficiency.
             - Keep entries short (1-2 sentences). Merge overlapping facts.
             - Do NOT store task-specific data, logs, or temporary state.
+            - Current MEMORY.md and USER.md contents for the active user are ALREADY preloaded in Layer 4 (Recalled Memory) of your system prompt. Do NOT use file_read, glob_search, or bash_command to search for USER.md or MEMORY.md on disk.
 
             Args:
                 action: "add" | "replace" | "remove"
@@ -471,10 +475,26 @@ class MemoryMiddleware(AgentMiddleware):
 
                 memory_block = store.format_for_prompt("memory")
                 user_block = store.format_for_prompt("user")
+                mem_limit = store.memory_char_limit
+                usr_limit = store.user_char_limit
             if memory_block:
                 recalled_parts.append(memory_block)
+            else:
+                recalled_parts.append(
+                    "══════════════════════════════════════════════\n"
+                    f"MEMORY (agent's personal notes) [0% — 0/{mem_limit:,} chars]\n"
+                    "══════════════════════════════════════════════\n"
+                    "(No entries recorded yet in MEMORY.md for this user.)"
+                )
             if user_block:
                 recalled_parts.append(user_block)
+            else:
+                recalled_parts.append(
+                    "══════════════════════════════════════════════\n"
+                    f"USER PROFILE (who the user is) [0% — 0/{usr_limit:,} chars]\n"
+                    "══════════════════════════════════════════════\n"
+                    "(No entries recorded yet in USER.md for this user.)"
+                )
 
         return ctx, session_id, user_id, recalled_parts
 
