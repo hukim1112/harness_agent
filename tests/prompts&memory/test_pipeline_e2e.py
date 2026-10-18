@@ -16,7 +16,7 @@ from app.utils import init_chat_model
 cfg_path = os.path.join(os.path.dirname(__file__), "..", "..", "configs", "model.config")
 with open(cfg_path, "r", encoding="utf-8") as f:
     model_cfg = json.load(f)
-llm = init_chat_model(model=model_cfg.get("model_name", "gemini-3.7-flash"), temperature=0.0)
+llm = init_chat_model(model=model_cfg.get("model_name", "gemini-3.8-flash"), temperature=0.0)
 
 
 # ── 테스트 대화 데이터셋 (3개 세션, 각각 다른 엣지 케이스) ──

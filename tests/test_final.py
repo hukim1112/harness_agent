@@ -105,9 +105,9 @@ async def run_final_test():
     print("─" * 70)
     try:
         from app.middleware.guardrails import InputSafetyGuardrail
-        safety_guard = InputSafetyGuardrail(model="gemini-2.5-flash", fail_mode="open")
+        safety_guard = InputSafetyGuardrail(model="gemini-3.8-flash", fail_mode="open")
         guard_agent = create_agent(
-            model=init_chat_model(model="gemini-3.7-flash", temperature=0.0),
+            model=init_chat_model(model="gemini-3.8-flash", temperature=0.0),
             tools=[], middleware=[safety_guard], context_schema=AgentContext,
         )
         res_jail = await guard_agent.ainvoke(
@@ -130,12 +130,12 @@ async def run_final_test():
     try:
         from app.middleware.guardrails import TopicAlignmentGuardrail
         topic_guard = TopicAlignmentGuardrail(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             blocked_topics=["정치적 견해, 종교적 논쟁 및 자극적 사회 갈등 조장 화제"],
             fail_mode="open"
         )
         guard_agent2 = create_agent(
-            model=init_chat_model(model="gemini-3.7-flash", temperature=0.0),
+            model=init_chat_model(model="gemini-3.8-flash", temperature=0.0),
             tools=[], middleware=[topic_guard], context_schema=AgentContext,
         )
         res_topic = await guard_agent2.ainvoke(
@@ -165,7 +165,7 @@ async def run_final_test():
             interrupt_on={"roll_dice": {"allowed_decisions": ["approve", "reject"]}}
         )
         hitl_agent = create_agent(
-            model=init_chat_model(model="gemini-2.5-flash", temperature=0.0),
+            model=init_chat_model(model="gemini-3.8-flash", temperature=0.0),
             tools=[roll_dice], middleware=[hitl_mw],
             checkpointer=checkpointer_hitl, context_schema=AgentContext,
         )
@@ -214,7 +214,7 @@ async def run_final_test():
 
         log_tracer = AgentLogTracer(log_path=test_log_file)
         obs_agent = create_agent(
-            model=init_chat_model(model="gemini-3.7-flash", temperature=0.0),
+            model=init_chat_model(model="gemini-3.8-flash", temperature=0.0),
             tools=[roll_dice], middleware=[log_tracer], context_schema=AgentContext,
         )
 

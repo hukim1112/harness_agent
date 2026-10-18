@@ -1,9 +1,9 @@
 # 🧪 Prompt & Memory Harness 종합 테스트 결과 리포트
 
-- **테스트 일시**: `2026-08-31 03:36:36`
-- **테스트 환경**: Python 3.12 (WSL Ubuntu) + LangChain 1.3.15 + Gemini 3.7 Flash
+- **테스트 일시**: `2026-10-19 00:20:00`
+- **테스트 환경**: Python 3.12 (WSL Ubuntu) + LangChain 1.3.15 + Gemini 3.8 Flash
 - **최종 결과**: **39/39 PASS** (성공률 100%)
-- **총 소요 시간**: `0.65초`
+- **총 소요 시간**: `0.30초`
 
 ---
 
@@ -13,9 +13,9 @@
 | :--- | :---: | :---: | :---: | :---: |
 | **Test 01: 5-Layer Prompt Assembly** | 9 | 9 | 0.00s | 🟢 PASS |
 | **Test 02: Semantic Memory Store** | 9 | 9 | 0.01s | 🟢 PASS |
-| **Test 03: Episodic Memory Store** | 14 | 14 | 0.26s | 🟢 PASS |
-| **Test 04: Middleware + Tool 통합** | 7 | 7 | 0.38s | 🟢 PASS |
-| **TOTAL** | **39** | **39** | **0.65s** | **🎉 ALL PASS** |
+| **Test 03: Episodic Memory Store** | 14 | 14 | 0.14s | 🟢 PASS |
+| **Test 04: Middleware + Tool 통합** | 7 | 7 | 0.15s | 🟢 PASS |
+| **TOTAL** | **39** | **39** | **0.30s** | **🎉 ALL PASS** |
 
 ---
 
@@ -40,7 +40,7 @@
 - ✅ **`test_08_merge_system_single_message`**
   - **상세**: merge_system=True: L1~L5 + Boundary가 단일 텍스트에 모두 포함
 - ✅ **`test_09_layer_order_integrity`**
-  - **상세**: 레이어 순서 정상: L1(4) → L2(59) → Boundary(186) → L3(226) → L4(364) → L5(477)
+  - **상세**: 레이어 순서 정상: L1(4) → L2(59) → Boundary(186) → L3(226) → L4(391) → L5(504)
 
 ### 🟢 Test 02: Semantic Memory Store (9/9)
 

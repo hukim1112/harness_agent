@@ -13,6 +13,10 @@ Claude Code 아키텍처의 5단계 컨텍스트 압축 엔진:
 
 통합 미들웨어: CompactorMiddleware(AgentMiddleware) + create_compactor_middleware()
 - wrap_model_call / awrap_model_call 로 Phase 1 (pre-call) + Phase 2 (reactive) 실행
+- ⚠️ 아키텍처 불변식 (Checkpointer SSOT 보존):
+  Compactor는 반드시 `request.override(messages=...)`를 통해 **모델에 전달되는 요청 페이로드만** 압축해야 하며,
+  LangGraph 그래프 state 자체의 `messages`를 덮어쓰거나 `RemoveMessage`로 삭제해서는 안 됩니다.
+  (`app/utils/database/session_store.py`의 `get_messages()`가 `checkpoints.db`를 대화 원본 SSOT로 참조합니다.)
 ===============================================================================
 """
 

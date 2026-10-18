@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
+    user_id TEXT DEFAULT 'default',
     summary TEXT,
     keywords TEXT,
     message_count INTEGER DEFAULT 0,
@@ -130,18 +131,29 @@ def _serialize_message(msg) -> Dict[str, str]:
 class EpisodicStore:
     """L2 에피소드 메모리 — 세션 대화를 SQLite에 저장하고 검색합니다.
 
-    DB: episodic.db
+    DB: app/database/episodic.db (user_id 컬럼으로 사용자별 격리)
     """
 
-    def __init__(self, db_path: str = "./artifacts/memory/episodic.db"):
+    def __init__(self, db_path: str = "./app/database/episodic.db"):
         self.db_path = db_path
         self._conn: Optional[aiosqlite.Connection] = None
 
     async def setup(self) -> None:
-        """DB 연결 + 테이블 생성."""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        """DB 연결 + WAL 모드 + 테이블 생성."""
+        os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         self._conn = await aiosqlite.connect(self.db_path, check_same_thread=False)
+        await self._conn.execute("PRAGMA journal_mode=WAL;")
+        await self._conn.execute("PRAGMA synchronous=NORMAL;")
+        await self._conn.execute("PRAGMA busy_timeout=5000;")
         await self._conn.executescript(SCHEMA_SQL)
+        # 기존 DB에 user_id 컬럼이 없을 경우 자동 마이그레이션
+        try:
+            cols = await self._conn.execute_fetchall("PRAGMA table_info(sessions)")
+            col_names = {c[1] for c in cols}
+            if "user_id" not in col_names:
+                await self._conn.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT DEFAULT 'default'")
+        except Exception as mig_err:
+            logger.debug("sessions user_id migration check: %s", mig_err)
         # FTS5 테이블은 별도 처리 (이미 존재하면 스킵)
         try:
             await self._conn.executescript(FTS_SCHEMA_SQL)
@@ -149,6 +161,11 @@ class EpisodicStore:
             logger.warning("FTS5 setup warning (may already exist): %s", e)
         await self._conn.commit()
         logger.info("EpisodicStore initialized: %s", self.db_path)
+
+    async def _ensure_conn(self) -> None:
+        """setup()이 아직 호출되지 않았으면 첫 사용 시점에 연결합니다."""
+        if not self._conn:
+            await self.setup()
 
     async def close(self) -> None:
         """DB 연결 종료."""
@@ -159,15 +176,15 @@ class EpisodicStore:
     # ── 메시지 저장 ──
 
     async def save_messages(
-        self, session_id: str, messages: List[Any]
+        self, session_id: str, messages: List[Any], user_id: str = "default"
     ) -> int:
         """현재 세션의 메시지를 DB에 저장.
 
         기존 메시지가 있으면 삭제 후 재삽입 (upsert 대체).
         Returns: 저장된 메시지 수
         """
-        if not self._conn:
-            raise RuntimeError("EpisodicStore not initialized. Call setup() first.")
+        await self._ensure_conn()
+        uid = (user_id or "default").strip() or "default"
 
         now = time.time()
         serialized = [_serialize_message(m) for m in messages]
@@ -186,15 +203,16 @@ class EpisodicStore:
 
         # sessions 테이블에 세션 레코드 upsert
         await self._conn.execute(
-            """INSERT INTO sessions (session_id, message_count, created_at, updated_at)
-               VALUES (?, ?, ?, ?)
+            """INSERT INTO sessions (session_id, user_id, message_count, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
+                   user_id = excluded.user_id,
                    message_count = excluded.message_count,
                    updated_at = excluded.updated_at""",
-            (session_id, len(serialized), now, now),
+            (session_id, uid, len(serialized), now, now),
         )
         await self._conn.commit()
-        logger.info("Saved %d messages for session %s", len(serialized), session_id)
+        logger.info("Saved %d messages for session %s (user=%s)", len(serialized), session_id, uid)
         return len(serialized)
 
     # ── 세션 종료 (요약 생성) ──
@@ -204,26 +222,37 @@ class EpisodicStore:
         session_id: str,
         messages: List[Any],
         llm=None,
+        user_id: str = "default",
+        cancel_event=None,
     ) -> str:
-        """세션 종료: 메시지 저장 + LLM으로 영어 요약 생성 + sessions 테이블 업데이트.
+        """세션 종료: 메시지 저장 + LLM으로 요약 생성 + sessions 테이블 업데이트.
 
         Args:
             session_id: 세션 식별자
             messages: 대화 메시지 리스트
             llm: 요약 생성에 사용할 LLM (None이면 간단 요약)
+            user_id: 사용자 식별자 (기본값 'default')
+            cancel_event: threading.Event — 설정되어 있으면 요약/DB 반영을 중단
 
         Returns:
-            생성된 요약 문자열
+            생성된 요약 문자열 (취소 시 빈 문자열)
         """
-        if not self._conn:
-            raise RuntimeError("EpisodicStore not initialized. Call setup() first.")
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("Episodic finalize cancelled before start for session %s", session_id)
+            return ""
 
-        # 1. 메시지 저장
-        await self.save_messages(session_id, messages)
+        await self._ensure_conn()
 
-        # 2. 요약 생성
+        # 1. 요약 생성 (네트워크/LLM 시간이 걸리는 작업을 먼저 수행하여 취소 시 DB 덮어쓰기 방지)
         serialized = [_serialize_message(m) for m in messages]
         summary, keywords = await self._generate_summary(serialized, llm)
+
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("Episodic finalize cancelled after LLM summary for session %s (skipping DB write)", session_id)
+            return ""
+
+        # 2. 메시지 저장
+        await self.save_messages(session_id, messages, user_id=user_id)
 
         # 3. sessions 테이블 업데이트
         now = time.time()
@@ -238,8 +267,8 @@ class EpisodicStore:
         await self._conn.commit()
 
         logger.info(
-            "Session %s finalized: %d messages, summary=%d chars, keywords=%s",
-            session_id, len(serialized), len(summary), keywords,
+            "Session %s finalized (user=%s): %d messages, summary=%d chars, keywords=%s",
+            session_id, user_id, len(serialized), len(summary), keywords,
         )
         return summary
 
@@ -467,19 +496,23 @@ class EpisodicStore:
         query: str,
         top_k: int = 3,
         exclude_session_id: str = None,
+        user_id: str = "default",
     ) -> List[Dict[str, Any]]:
-        """FTS5 기반 세션 검색.
+        """FTS5 기반 세션 검색 (user_id 격리).
 
         Args:
             query: 검색 쿼리 (한국어/영어 모두 지원)
             top_k: 반환할 최대 세션 수
             exclude_session_id: 현재 세션 제외
+            user_id: 조회할 사용자 ID (기본값 'default')
 
         Returns:
             [{session_id, summary, keywords, message_count, snippet}, ...]
         """
-        if not self._conn or not query.strip():
+        if not query.strip():
             return []
+        await self._ensure_conn()
+        uid = (user_id or "default").strip() or "default"
 
         try:
             # FTS5 구문 에러(-, &, :, *, / 등) 완전 방지 정제 로직
@@ -492,11 +525,11 @@ class EpisodicStore:
                        snippet(sessions_fts, 0, '>>>', '<<<', '...', 32) as snippet
                 FROM sessions_fts
                 JOIN sessions s ON sessions_fts.rowid = s.rowid
-                WHERE sessions_fts MATCH ?
+                WHERE sessions_fts MATCH ? AND COALESCE(s.user_id, 'default') = ?
                 ORDER BY rank
                 LIMIT ?
             """
-            rows = await self._conn.execute_fetchall(sql, (fts_query, top_k + 5))
+            rows = await self._conn.execute_fetchall(sql, (fts_query, uid, top_k + 5))
 
             results = []
             for row in rows:
@@ -523,25 +556,29 @@ class EpisodicStore:
         session_id: str,
         anchor_keyword: str = "",
         window: int = 5,
+        user_id: str = "default",
     ) -> List[Dict[str, Any]]:
         """Anchor 기반 인출: anchor_keyword와 매칭되는 메시지 중심 ±window 반환.
 
         Hermes의 Lineage 기반 인출 방식 단순화:
-        1. anchor_keyword로 FTS5 매칭 (또는 LIKE fallback)
-        2. anchor 메시지 중심 ±window 범위의 메시지 반환
+        1. sessions 테이블과 JOIN하여 요청자의 user_id 소유 세션인지 검증 (타 사용자 세션 접근 차단)
+        2. anchor_keyword로 매칭되는 메시지 중심 ±window 범위의 메시지 반환
         3. 세션의 첫 3개 + 마지막 3개 메시지를 bookend로 항상 포함
 
         anchor_keyword가 비어있으면 세션의 마지막 window 메시지를 반환.
         """
-        if not self._conn:
-            return []
+        await self._ensure_conn()
+        uid = (user_id or "default").strip() or "default"
 
         try:
-            # 세션의 모든 메시지 로드
+            # 세션 소유자(user_id) 검증을 포함하여 메시지 로드
             rows = await self._conn.execute_fetchall(
-                "SELECT id, role, content, created_at FROM messages "
-                "WHERE session_id = ? ORDER BY id ASC",
-                (session_id,),
+                "SELECT m.id, m.role, m.content, m.created_at "
+                "FROM messages m "
+                "JOIN sessions s ON m.session_id = s.session_id "
+                "WHERE m.session_id = ? AND s.user_id = ? "
+                "ORDER BY m.id ASC",
+                (session_id, uid),
             )
             if not rows:
                 return []
@@ -603,17 +640,17 @@ class EpisodicStore:
 
         return best_idx
 
-    async def browse_recent(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """최근 세션 목록 반환 (Browse 모드)."""
-        if not self._conn:
-            return []
+    async def browse_recent(self, limit: int = 5, user_id: str = "default") -> List[Dict[str, Any]]:
+        """최근 세션 목록 반환 (Browse 모드, user_id 격리 적용)."""
+        await self._ensure_conn()
+        uid = (user_id or "default").strip() or "default"
 
         try:
             rows = await self._conn.execute_fetchall(
                 "SELECT session_id, summary, keywords, message_count, updated_at "
-                "FROM sessions WHERE summary IS NOT NULL "
+                "FROM sessions WHERE summary IS NOT NULL AND user_id = ? "
                 "ORDER BY updated_at DESC LIMIT ?",
-                (limit,),
+                (uid, limit),
             )
             return [
                 {

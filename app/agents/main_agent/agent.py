@@ -1,20 +1,28 @@
 """
-app/agents/main_agent.py — 메인 오케스트레이터 에이전트 (실습 스타터)
+app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (실습 스타터)
 
 교육생은 missions/ 가이드의 안내에 따라 이 파일에 하네스 기능을 순서대로 결합해 나갑니다.
 - Mission 02: 자가 복구(Self-Recovery) 미들웨어 & 오케스트레이션 도구 장착
 - Mission 03: 5계층 프롬프트 조립기 & 계층형 메모리(Semantic/Episodic) 결합
+- Mission 04: 전문 금융 스킬(10종) 카탈로그 동적 주입
+- Mission 05: Human-in-the-Loop 권한 승인 게이트 장착
+- Mission 06: 입력 보안 & 주제 정렬 가드레일 장착
+- Mission 07: 비동기 JSONL 감사 로깅(AgentLogTracer) 장착
 """
 
 import os
 import json
+from pathlib import Path
 import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 
 from app.utils import init_chat_model
 from app.utils.context import AgentContext
-from app.prompts import SUPERVISOR_SYSTEM_PROMPT
+from .prompt import SUPERVISOR_SYSTEM_PROMPT
+from .tools import tools_supervisor
+
+SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 # 1. 에이전트 프로필
 AGENT_METADATA = {
@@ -34,14 +42,14 @@ def _load_config(path: str, default: dict) -> dict:
     return default
 
 
-async def create_agent_executor():
+async def create_agent_executor(checkpointer=None):
     # 2. LLM 초기화 (configs/model.config 기반)
     model_cfg = _load_config("./configs/model.config", {
-        "model_name": "gemini-3.7-flash",
+        "model_name": "gemini-3.8-flash",
         "temperature": 0.0,
     })
     llm = init_chat_model(
-        model=model_cfg.get("model_name", "gemini-3.7-flash"),
+        model=model_cfg.get("model_name", "gemini-3.8-flash"),
         temperature=model_cfg.get("temperature", 0.0)
     )
 
@@ -50,9 +58,13 @@ async def create_agent_executor():
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-    checkpointer = AsyncSqliteSaver(conn)
-    await checkpointer.setup()
+    conn = None
+    if checkpointer is None:
+        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA busy_timeout=5000;")
+        checkpointer = AsyncSqliteSaver(conn)
+        await checkpointer.setup()
 
     # 4. 미들웨어 파이프라인 (Mission 02에서 Self-Recovery 미들웨어 추가)
     middleware = []

@@ -43,14 +43,14 @@ def _load_config(path: str, default: dict) -> dict:
     return default
 
 
-async def create_agent_executor():
+async def create_agent_executor(checkpointer=None):
     # 2. LLM 초기화 (configs/model.config 기반)
     model_cfg = _load_config("./configs/model.config", {
-        "model_name": "gemini-3.7-flash",
+        "model_name": "gemini-3.8-flash",
         "temperature": 0.0,
     })
     llm = init_chat_model(
-        model=model_cfg.get("model_name", "gemini-3.7-flash"),
+        model=model_cfg.get("model_name", "gemini-3.8-flash"),
         temperature=model_cfg.get("temperature", 0.0)
     )
     
@@ -59,9 +59,13 @@ async def create_agent_executor():
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-    checkpointer = AsyncSqliteSaver(conn)
-    await checkpointer.setup()
+    conn = None
+    if checkpointer is None:
+        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA busy_timeout=5000;")
+        checkpointer = AsyncSqliteSaver(conn)
+        await checkpointer.setup()
     
     # ---------------------------------------------------------------------------
     # 4. 도구 바인딩

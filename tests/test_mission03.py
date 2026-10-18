@@ -34,7 +34,7 @@ async def run_prompt_and_memory_test():
     # -------------------------------------------------------------------------
     from app.middleware.memory import SemanticMemoryStore
 
-    test_mem_dir = "app/database"
+    test_mem_dir = "artifacts/users/default/memory"
     os.makedirs(test_mem_dir, exist_ok=True)
     sem_store = SemanticMemoryStore(memory_dir=test_mem_dir)
     sem_store.load_from_disk()
@@ -48,7 +48,7 @@ async def run_prompt_and_memory_test():
     # -------------------------------------------------------------------------
     from app.middleware.memory import EpisodicStore
 
-    test_epi_dir = "artifacts/memory"
+    test_epi_dir = "app/database"
     os.makedirs(test_epi_dir, exist_ok=True)
     test_epi_path = os.path.join(test_epi_dir, "test_episodic_verify.db")
     if os.path.exists(test_epi_path):
@@ -95,13 +95,13 @@ async def run_prompt_and_memory_test():
     tool_names = {getattr(t, "name", "") for t in registered_tools}
 
     # 필수 메모리 도구 2종 검증
-    assert "memory" in tool_names, "❌ memory 도구가 바인딩되지 않았습니다. main_agent.py의 Mission 03-2를 확인하세요."
+    assert "memory" in tool_names, "❌ memory 도구가 바인딩되지 않았습니다. MemoryMiddleware.get_tools()를 확인하세요."
     assert "session_recall" in tool_names, "❌ session_recall 도구가 바인딩되지 않았습니다."
     print(f"  ✅ Test 3 통과: main_agent에 메모리 전용 도구(memory, session_recall) 정상 바인딩 (총 {len(registered_tools)}종 도구)")
 
     # 미들웨어 탑재 여부 검증
     assembler = getattr(agent, "assembler", None)
-    assert assembler is not None, "❌ main_agent에 PromptAssembler가 탑재되지 않았습니다. main_agent.py의 Mission 03-3을 확인하세요."
+    assert assembler is not None, "❌ main_agent에 PromptAssembler가 탑재되지 않았습니다."
     print("  ✅ Test 4 통과: Claude Code 5-Layer Prompt Assembler 정상 장착 확인")
 
     # -------------------------------------------------------------------------
@@ -121,6 +121,16 @@ async def run_prompt_and_memory_test():
     print("\n" + "=" * 80)
     print("🎨 [실물 시각화] LLM에 런타임 주입되는 5-Layer System Prompt 전문")
     print("=" * 80)
+    
+    # 계층별 구분 표시
+    layers = [
+        ("Layer 1: System Identity & Core Role", "=== Layer 1:"),
+        ("Layer 2: Capabilities (Tools & Skills)", "=== Layer 2:"),
+        ("Layer 3: Dynamic Session Context", "=== Layer 3:"),
+        ("Layer 4: Memory & Dynamic Documents", "=== Layer 4:"),
+        ("Layer 5: User & Local Project Rules", "=== Layer 5:"),
+    ]
+
     print(assembled_prompt)
     print("=" * 80)
 

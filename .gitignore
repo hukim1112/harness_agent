@@ -68,10 +68,14 @@ artifacts/*.html
 artifacts/*.csv
 artifacts/*.xlsx
 artifacts/*.md
+artifacts/users/*/sessions/
 
-# ── Preserved Seed Assets (교육생 실습용 스킬 풀은 반드시 Git 추적 유지) ──
+# ── Preserved Seed Assets (교육생 실습용 스킬 풀 및 기본 유저 시드 메모리는 Git 추적 유지) ──
 !artifacts/skills_pool/
 !artifacts/skills_pool/**
+!artifacts/users/default/memory/
+!artifacts/users/default/memory/USER.md
+!artifacts/users/default/memory/MEMORY.md
 
 # ── Browser automation temp files ──
 bu_cdp_*/

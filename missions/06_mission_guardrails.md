@@ -19,7 +19,7 @@
   👉 가드레일 활성화 여부(`guardrail_enabled`), 입력 보안 모드, 주제 차단 목록(`blocked_topics`)을 제어합니다.
 * **미들웨어 구현체**: [`app/middleware/guardrails/guardrails.py`](app/middleware/guardrails/guardrails.py)  
   👉 `InputSafetyGuardrail` 및 `TopicAlignmentGuardrail` 클래스가 구현되어 있습니다.
-* **에이전트 결합 파일**: [`app/agents/main_agent.py`](app/agents/main_agent.py)  
+* **에이전트 결합 파일**: [`app/agents/main_agent/agent.py`](app/agents/main_agent/agent.py)  
   👉 `guardrail.config`에 따라 가드레일 미들웨어를 동적으로 파이프라인에 주입합니다.
 * **자동화 검증 스크립트**: [`tests/test_mission06.py`](tests/test_mission06.py)
 
@@ -41,6 +41,12 @@
   "topic_alignment": {
     "enabled": true,
     "fail_mode": "open",
+    "allowed_topics": [
+      "금융, 인증 및 비즈니스 업무",
+      "프로그래밍, 코드 분석 및 기술 지원",
+      "데이터베이스, 파일 시스템 및 도구(Tools) 활용",
+      "일반 업무 생산성 및 상식 질의"
+    ],
     "blocked_topics": [
       "타사 AI 어시스턴트/솔루션에 대한 성능 비교 및 비방/평가 요청",
       "정치적 견해, 종교적 논쟁 및 자극적 사회 갈등 조장 화제",
@@ -50,24 +56,36 @@
 }
 ```
 
+> 💡 **`fail_mode`**: 가드레일 LLM 호출 자체가 실패했을 때의 정책입니다. `"open"`은 검증을 건너뛰고 통과(가용성 우선), `"close"`는 요청을 차단(보안 우선)합니다. 가드별로 따로 지정할 수 있습니다.
+> 💡 **`allowed_topics`**: 생략하면 `TopicAlignmentGuardrail.DEFAULT_ALLOWED`(위 4개 도메인)가 사용됩니다.
+
 ---
 
-### 2단계: `app/agents/main_agent.py` 미들웨어 마운트 확인
+### 2단계: `app/agents/main_agent/agent.py` 미들웨어 마운트 확인
 
-`main_agent.py`는 `guardrail_enabled: true`일 때 `InputSafetyGuardrail`과 `TopicAlignmentGuardrail`을 모델 호출 직전(Wrap Model Call) 단계에 자동으로 마운트합니다:
+`main_agent/agent.py`는 `guardrail_enabled: true`일 때 `InputSafetyGuardrail`과 `TopicAlignmentGuardrail`을 모델 호출 직전(Wrap Model Call) 단계에 자동으로 마운트합니다:
 
 ```python
-# app/agents/main_agent.py 내부
+# app/agents/main_agent/agent.py 내부
 from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
 
 guardrail_cfg = _load_config("./configs/guardrail.config", {"guardrail_enabled": False})
 if guardrail_cfg.get("guardrail_enabled"):
-    guard_model = model_cfg.get("model_name", "gemini-2.5-flash")
-    if guardrail_cfg.get("input_safety", {}).get("enabled", True):
-        middleware.append(InputSafetyGuardrail(model=guard_model, fail_mode="open"))
-    if guardrail_cfg.get("topic_alignment", {}).get("enabled", True):
-        blocked = guardrail_cfg.get("topic_alignment", {}).get("blocked_topics")
-        middleware.append(TopicAlignmentGuardrail(model=guard_model, blocked_topics=blocked, fail_mode="open"))
+    guard_model = model_cfg.get("model_name", "gemini-3.8-flash")
+    safety_cfg = guardrail_cfg.get("input_safety", {})
+    if safety_cfg.get("enabled", True):
+        middleware.append(InputSafetyGuardrail(
+            model=guard_model,
+            fail_mode=safety_cfg.get("fail_mode", "open"),
+        ))
+    topic_cfg = guardrail_cfg.get("topic_alignment", {})
+    if topic_cfg.get("enabled", True):
+        middleware.append(TopicAlignmentGuardrail(
+            model=guard_model,
+            allowed_topics=topic_cfg.get("allowed_topics"),
+            blocked_topics=topic_cfg.get("blocked_topics"),
+            fail_mode=topic_cfg.get("fail_mode", "open"),
+        ))
 ```
 
 ---

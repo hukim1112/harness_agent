@@ -1,6 +1,6 @@
 # 📋 미들웨어 파이프라인 순서 레퍼런스
 
-Mission 02~07을 거치며 `main_agent.py`에 추가되는 미들웨어의 **최종 파이프라인 순서**를 정리한 레퍼런스입니다.  
+Mission 02~07을 거치며 `app/agents/main_agent/agent.py`에 추가되는 미들웨어의 **최종 파이프라인 순서**를 정리한 레퍼런스입니다.  
 미들웨어 삽입 순서가 헷갈릴 때 이 파일을 참고하세요.
 
 ---
@@ -31,8 +31,8 @@ Mission 02~07을 거치며 `main_agent.py`에 추가되는 미들웨어의 **최
 | 위치 | 미들웨어 | 배치 이유 |
 | :---: | :--- | :--- |
 | 1 | **AgentLogTracer** | 가장 바깥에서 감싸야 차단된 요청 포함 **전체 라이프사이클**을 로깅 |
-| 2~3 | **Guardrails** | 악의적/오프토픽 입력을 **메모리 조회 전에** 즉시 차단 → 리소스 낭비 방지 |
-| 4~5 | **Memory → Prompt** | 안전이 확인된 입력만 메모리 조회 및 프롬프트 조립에 사용 |
+| 2~3 | **Guardrails** | 악의적/오프토픽 입력을 **LLM 호출 전에** 즉시 차단 |
+| 4~5 | **Memory → Prompt** | 꺼진 메모리 도구를 필터링한 뒤 5계층 프롬프트를 조립 (※ 메모리 인출은 `before_agent` 훅에서 1회 수행) |
 | 6 | **HITL** | 도구 실행 **직전**에 인터럽트하여 사용자 승인을 요청 |
 | 7~9 | **Self-Recovery** | LLM에 가장 가까운 내부에서 모델/도구 **장애 복구** 담당 |
 
@@ -103,7 +103,8 @@ middleware = []
 
 # (1) Logging ← 추가 (가장 앞에 위치!)
 if logging_cfg.get("logging_enabled"):
-    middleware.append(AgentLogTracer(log_path=...))     # ← 추가
+    log_dir = logging_cfg.get("log_dir")
+    middleware.append(AgentLogTracer(log_dir=log_dir) if log_dir else AgentLogTracer())   # ← 추가
 
 # (2) Guardrails
 # (3) Memory & Prompt

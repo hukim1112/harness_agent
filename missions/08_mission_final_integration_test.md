@@ -48,7 +48,7 @@ python tests/test_final.py
 | 🛡️ InputSafety | `configs/guardrail.config`의 `guardrail_enabled: true`, `input_safety.enabled: true` |
 | 🛑 TopicAlignment | `topic_alignment.enabled: true`, `blocked_topics` 리스트 확인 |
 | 🎲 HITL | `configs/hitl.config`의 `hitl_enabled: true`, `roll_dice`가 `interrupt_on`에 등록 |
-| 📊 감사 로그 | `configs/logging.config`의 `logging_enabled: true`, `log_dir` 디렉토리 쓰기 권한 |
+| 📊 감사 로그 | `configs/logging.config`의 `logging_enabled: true` (기본 저장 위치: 세션별 `artifacts/users/{user_id}/sessions/{session_id}/logs/audit.jsonl`) |
 | 💾 Episodic | `EpisodicStore`가 정상 초기화, `finalize_session` 호출 후 인덱싱 완료 대기 |
 
 ---

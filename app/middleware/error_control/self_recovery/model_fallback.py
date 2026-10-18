@@ -68,7 +68,7 @@ class ModelFallbackMiddleware(AgentMiddleware):
     Args:
         max_retries: 주 모델 재시도 최대 횟수 (기본 3).
         initial_delay: 첫 번째 재시도 전 대기 시간(초) (기본 0.5).
-        fallback_model_name: 백업 모델 이름 (기본 "gemini-2.5-pro").
+        fallback_model_name: 백업 모델 이름 (기본 "gpt-6.1-sol").
         fallback_llm: 사전 생성된 백업 LLM 인스턴스. None이면 lazy init.
 
     Example:
@@ -77,7 +77,7 @@ class ModelFallbackMiddleware(AgentMiddleware):
 
         middleware = ModelFallbackMiddleware(
             max_retries=3,
-            fallback_model_name="gemini-2.5-pro"
+            fallback_model_name="gpt-6.1-sol"
         )
         agent = create_agent(model=llm, tools=tools, middleware=[middleware])
         ```
@@ -87,7 +87,7 @@ class ModelFallbackMiddleware(AgentMiddleware):
         self,
         max_retries: int = 3,
         initial_delay: float = 0.5,
-        fallback_model_name: str = "gemini-2.5-pro",
+        fallback_model_name: str = "gpt-6.1-sol",
         fallback_llm: Optional[Any] = None,
     ):
         self.max_retries = max_retries

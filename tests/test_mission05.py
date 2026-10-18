@@ -62,7 +62,7 @@ async def run_mission05_test():
     checkpointer = AsyncSqliteSaver(conn)
     await checkpointer.setup()
 
-    llm = init_chat_model(model="gemini-2.5-flash", temperature=0.0)
+    llm = init_chat_model(model="gemini-3.8-flash", temperature=0.0)
     hitl_mw = HumanInTheLoopMiddleware(interrupt_on=interrupt_on)
 
     hitl_agent = create_agent(

@@ -93,7 +93,7 @@ async def demonstrate_prompt_and_memory():
         HumanMessage(content="지난번에 설정한 PostgreSQL 풀 크기와 Redis TTL이 뭐였더라? session_recall 도구로 확인해줘.")
     ]
 
-    print("\n📨 [LLM API(Gemini 3.7 Flash)로 전송되는 최종 Messages Payload 구조]")
+    print("\n📨 [LLM API(Gemini 3.8 Flash)로 전송되는 최종 Messages Payload 구조]")
     for idx, msg in enumerate(messages_payload, 1):
         msg_type = msg.__class__.__name__
         content_preview = msg.content if len(msg.content) < 300 else msg.content[:300] + "\n... [중략] ..."

@@ -59,7 +59,7 @@ async def run_mission07_test():
             pass
 
     log_tracer = AgentLogTracer(log_path=test_log_file)
-    llm = init_chat_model(model="gemini-3.7-flash", temperature=0.0)
+    llm = init_chat_model(model="gemini-3.8-flash", temperature=0.0)
 
     obs_agent = create_agent(
         model=llm,

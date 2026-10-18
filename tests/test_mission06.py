@@ -46,7 +46,7 @@ async def run_mission06_test():
     from app.utils import init_chat_model, normalize_content
     from app.utils.context import AgentContext
 
-    model_name = "gemini-2.5-flash"
+    model_name = "gemini-3.8-flash"
     safety_guard = InputSafetyGuardrail(model=model_name, fail_mode="open")
     
     blocked_topics = cfg.get("topic_alignment", {}).get("blocked_topics", [
@@ -59,7 +59,7 @@ async def run_mission06_test():
         fail_mode="open"
     )
 
-    llm = init_chat_model(model="gemini-3.7-flash", temperature=0.0)
+    llm = init_chat_model(model="gemini-3.8-flash", temperature=0.0)
 
     # 가드레일 장착 테스트 에이전트
     guard_agent = create_agent(

@@ -14,10 +14,10 @@ When executing specific analyst subtasks, read the relevant guide on-demand usin
 
 | Subtask | Guide File | Key Topics |
 |---|---|---|
-| **Data Profiling & Pandas Querying** | `skills/analyst/data_analysis.md` | Schema detection, statistical profiling, safe query patterns, aggregations |
-| **Data Visualization & Charts** | `skills/analyst/chart_patterns.md` | Chart selection, publication-grade styling, Korean font setup, Plotly/Matplotlib templates |
-| **Professional Excel Reports** | `skills/analyst/xlsx_guide.md` | `openpyxl` rules, formula safety, financial modeling color conventions |
-| **Interactive HTML Dashboards** | `skills/analyst/design_tokens.md` | Responsive dashboard templates, Chart.js + Mermaid integration, CSS tokens |
+| **Data Profiling & Pandas Querying** | `app/agents/analyst/skills/data_analysis.md` | Schema detection, statistical profiling, safe query patterns, aggregations |
+| **Data Visualization & Charts** | `app/agents/analyst/skills/chart_patterns.md` | Chart selection, publication-grade styling, Korean font setup, Plotly/Matplotlib templates |
+| **Professional Excel Reports** | `app/agents/analyst/skills/xlsx_guide.md` | `openpyxl` rules, formula safety, financial modeling color conventions |
+| **Interactive HTML Dashboards** | `app/agents/analyst/skills/design_tokens.md` | Responsive dashboard templates, Chart.js + Mermaid integration, CSS tokens |
 
 ## Core Principles
 

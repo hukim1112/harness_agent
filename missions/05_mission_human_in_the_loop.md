@@ -22,7 +22,7 @@
 
 * **런타임 설정 파일**: [`configs/hitl.config`](configs/hitl.config)  
   👉 HITL 활성화 여부(`hitl_enabled`) 및 인터럽트 대상 도구(`interrupt_on`)를 제어합니다.
-* **에이전트 정의 파일**: [`app/agents/main_agent.py`](app/agents/main_agent.py)  
+* **에이전트 정의 파일**: [`app/agents/main_agent/agent.py`](app/agents/main_agent/agent.py)  
   👉 `active_tools`에 `roll_dice`를 포함하고, `HumanInTheLoopMiddleware`를 동적으로 마운트합니다.
 * **웹 프론트엔드 연동**: [`app/chainlit_ui.py`](app/chainlit_ui.py)  
   👉 SSE 스트림을 통해 `__interrupt__` 이벤트를 수신하면 `cl.AskActionMessage`로 인터랙티브 버튼을 띄웁니다.
@@ -49,12 +49,12 @@
 
 ---
 
-### 2단계: `app/agents/main_agent.py` 미들웨어 마운트 확인
+### 2단계: `app/agents/main_agent/agent.py` 미들웨어 마운트 확인
 
-`main_agent.py`는 초기화 시 `hitl.config`를 읽어 `hitl_enabled: true`인 경우 `HumanInTheLoopMiddleware`를 자동으로 미들웨어 파이프라인에 결합합니다:
+`app/agents/main_agent/agent.py`는 초기화 시 `hitl.config`를 읽어 `hitl_enabled: true`인 경우 `HumanInTheLoopMiddleware`를 자동으로 미들웨어 파이프라인에 결합합니다:
 
 ```python
-# app/agents/main_agent.py 내부
+# app/agents/main_agent/agent.py 내부
 from app.tools.custom_tools import roll_dice, convert_currency
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
