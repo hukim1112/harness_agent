@@ -91,13 +91,25 @@ async def run_prompt_and_memory_test():
         print(f"❌ [FAIL] main_agent 생성 중 에러 발생: {e}")
         return False
 
-    registered_tools = getattr(agent, "registered_tools", [])
-    tool_names = {getattr(t, "name", "") for t in registered_tools}
+    # create_agent가 MemoryMiddleware.tools를 자동 수집하여 ToolNode에 등록하므로 ToolNode에서 전체 도구를 확인
+    all_tools = []
+    if hasattr(agent, "nodes") and "tools" in agent.nodes:
+        tools_node = agent.nodes["tools"]
+        bound_node = getattr(tools_node, "bound", tools_node)
+        if hasattr(bound_node, "tools_by_name"):
+            all_tools = list(bound_node.tools_by_name.values())
+    if not all_tools:
+        all_tools = list(getattr(agent, "registered_tools", []))
 
-    # 필수 메모리 도구 2종 검증
-    assert "memory" in tool_names, "❌ memory 도구가 바인딩되지 않았습니다. MemoryMiddleware.get_tools()를 확인하세요."
-    assert "session_recall" in tool_names, "❌ session_recall 도구가 바인딩되지 않았습니다."
-    print(f"  ✅ Test 3 통과: main_agent에 메모리 전용 도구(memory, session_recall) 정상 바인딩 (총 {len(registered_tools)}종 도구)")
+    tool_names = {getattr(t, "name", "") for t in all_tools}
+
+    # 필수 메모리 도구 2종 및 커스텀 도구 2종 검증
+    assert "memory" in tool_names, "❌ memory 도구가 에이전트에 등록되지 않았습니다. middleware에 MemoryMiddleware가 포함되었는지 확인하세요."
+    assert "session_recall" in tool_names, "❌ session_recall 도구가 에이전트에 등록되지 않았습니다."
+    assert "roll_dice" in tool_names and "convert_currency" in tool_names, (
+        "❌ 커스텀 도구(roll_dice, convert_currency)가 active_tools에 포함되지 않았습니다."
+    )
+    print(f"  ✅ Test 3 통과: main_agent에 메모리 도구(memory, session_recall) 자동 등록 및 전체 도구 바인딩 확인 (총 {len(all_tools)}종 도구)")
 
     # 미들웨어 탑재 여부 검증
     assembler = getattr(agent, "assembler", None)
@@ -116,7 +128,7 @@ async def run_prompt_and_memory_test():
         "recalled_memory": f"• [Semantic Profile]: {user_entries[0] if user_entries else 'Standard User'}\n• [Episodic Hint]: 과거 세션({search_results[0]['session_id']})에서 Qdrant/FastAPI 아키텍처 논의 완료",
     }
 
-    assembled_prompt = assembler.build_system_prompt(session_ctx)
+    assembled_prompt = assembler.build_system_prompt(session_ctx, tools=all_tools)
 
     print("\n" + "=" * 80)
     print("🎨 [실물 시각화] LLM에 런타임 주입되는 5-Layer System Prompt 전문")

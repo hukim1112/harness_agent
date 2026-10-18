@@ -139,6 +139,10 @@ def resolve_user_memory_dir(
     mem_dir = root / safe_uid / "memory"
     if ensure_exists:
         mem_dir.mkdir(parents=True, exist_ok=True)
+        for fname in ("MEMORY.md", "USER.md"):
+            fpath = mem_dir / fname
+            if not fpath.exists():
+                fpath.write_text("", encoding="utf-8")
     return mem_dir
 
 

@@ -61,32 +61,214 @@
 
 ---
 
-### 2단계: `app/agents/main_agent/agent.py` 미들웨어 마운트 확인
+### 2단계: `app/agents/main_agent/agent.py`에 가드레일 미들웨어 직접 장착하기
 
-`main_agent/agent.py`는 `guardrail_enabled: true`일 때 `InputSafetyGuardrail`과 `TopicAlignmentGuardrail`을 모델 호출 직전(Wrap Model Call) 단계에 자동으로 마운트합니다:
+`app/agents/main_agent/agent.py`를 열고, `configs/guardrail.config`가 활성화(`guardrail_enabled: true`)되었을 때 `InputSafetyGuardrail`과 `TopicAlignmentGuardrail`을 미들웨어 파이프라인에 장착합니다.
+
+> 📌 **미들웨어 파이프라인 위치 안내** (상세 순서: [`MIDDLEWARE_PIPELINE_REFERENCE.md`](./MIDDLEWARE_PIPELINE_REFERENCE.md) 참고):  
+> 악의적인 프롬프트 인젝션이나 오프토픽 질문은 **메인 LLM 추론이나 도구 실행이 일어나기 전에 가장 먼저 차단**해야 합니다.  
+> 따라서 가드레일 미들웨어는 **`(3) Memory & Prompt`보다 앞(바깥쪽)**에 위치하도록 추가합니다!
+
+1. 파일 상단에 가드레일 미들웨어 2종 임포트를 추가합니다:
+   ```python
+   from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
+   ```
+
+2. `create_agent_executor()` 내부의 `middleware = []` 직후(`(3) Memory & Prompt` 앞)에 아래 **`(2) Guardrails`** 블록을 추가합니다:
+   ```python
+   middleware = []
+
+   # (2) Guardrails — 프롬프트 인젝션 차단 + 오프토픽 질문 거부 (Memory & Prompt 앞에 위치!)
+   guardrail_cfg = _load_config("./configs/guardrail.config", {"guardrail_enabled": False})
+   if guardrail_cfg.get("guardrail_enabled"):
+       guard_model = model_cfg.get("model_name", "gemini-3.8-flash")
+       safety_cfg = guardrail_cfg.get("input_safety", {})
+       if safety_cfg.get("enabled", True):
+           middleware.append(InputSafetyGuardrail(
+               model=guard_model,
+               fail_mode=safety_cfg.get("fail_mode", "open"),
+           ))
+       topic_cfg = guardrail_cfg.get("topic_alignment", {})
+       if topic_cfg.get("enabled", True):
+           middleware.append(TopicAlignmentGuardrail(
+               model=guard_model,
+               allowed_topics=topic_cfg.get("allowed_topics"),
+               blocked_topics=topic_cfg.get("blocked_topics"),
+               fail_mode=topic_cfg.get("fail_mode", "open"),
+           ))
+
+   # (3) Memory & Prompt
+   middleware.extend([memory_mw, prompt_mw])
+   ```
+
+<details>
+<summary><b>👉 완성된 <code>app/agents/main_agent/agent.py</code> 전체 코드 (Mission 06 시점 참고용)</b></summary>
 
 ```python
-# app/agents/main_agent/agent.py 내부
+import os
+import json
+from pathlib import Path
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+
+from app.utils import init_chat_model
+from app.utils.context import AgentContext
+from .prompt import SUPERVISOR_SYSTEM_PROMPT
+from .tools import tools_supervisor
+from app.tools.custom_tools import roll_dice, convert_currency
+from app.middleware.memory import SemanticMemoryStore, EpisodicStore, MemoryMiddleware
+from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
+from app.middleware.error_control.self_recovery import (
+    ModelFallbackMiddleware,
+    ToolErrorHandlerMiddleware,
+    ModelCallLimitMiddleware,
+)
 from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
 
-guardrail_cfg = _load_config("./configs/guardrail.config", {"guardrail_enabled": False})
-if guardrail_cfg.get("guardrail_enabled"):
-    guard_model = model_cfg.get("model_name", "gemini-3.8-flash")
-    safety_cfg = guardrail_cfg.get("input_safety", {})
-    if safety_cfg.get("enabled", True):
-        middleware.append(InputSafetyGuardrail(
-            model=guard_model,
-            fail_mode=safety_cfg.get("fail_mode", "open"),
-        ))
-    topic_cfg = guardrail_cfg.get("topic_alignment", {})
-    if topic_cfg.get("enabled", True):
-        middleware.append(TopicAlignmentGuardrail(
-            model=guard_model,
-            allowed_topics=topic_cfg.get("allowed_topics"),
-            blocked_topics=topic_cfg.get("blocked_topics"),
-            fail_mode=topic_cfg.get("fail_mode", "open"),
-        ))
+SKILLS_DIR = Path(__file__).resolve().parent / "skills"
+
+AGENT_METADATA = {
+    "name": "main_agent",
+    "description": "하네스 기능을 연결할 메인 오케스트레이터 에이전트",
+    "roles": ["main"],
+}
+
+
+def _load_config(path: str, default: dict) -> dict:
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default
+
+
+async def create_agent_executor(checkpointer=None):
+    model_cfg = _load_config("./configs/model.config", {
+        "model_name": "gemini-3.8-flash",
+        "temperature": 0.0,
+    })
+    llm = init_chat_model(
+        model=model_cfg.get("model_name", "gemini-3.8-flash"),
+        temperature=model_cfg.get("temperature", 0.0)
+    )
+
+    db_dir = "app/database"
+    os.makedirs(db_dir, exist_ok=True)
+    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
+
+    conn = None
+    if checkpointer is None:
+        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA busy_timeout=5000;")
+        checkpointer = AsyncSqliteSaver(conn)
+        await checkpointer.setup()
+
+    memory_cfg = _load_config("./configs/memory.config", {})
+    sem_cfg = memory_cfg.get("semantic_memory", {})
+    epi_cfg = memory_cfg.get("episodic_memory", {})
+
+    memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
+    os.makedirs(memory_dir, exist_ok=True)
+    semantic_store = SemanticMemoryStore(
+        memory_dir=memory_dir,
+        memory_char_limit=4000,
+        user_char_limit=2000,
+    )
+    semantic_store.load_from_disk()
+
+    episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
+    os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
+    episodic_store = EpisodicStore(db_path=episodic_db_path)
+    await episodic_store.setup()
+
+    memory_mw = MemoryMiddleware(
+        semantic_store=semantic_store,
+        episodic_store=episodic_store,
+        review_llm=llm,
+        top_k=epi_cfg.get("top_k_prefetch", 2),
+    )
+    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
+
+    skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
+    skill_builder = SkillPromptBuilder(
+        skills_dirs=[str(SKILLS_DIR)],
+        guidelines_path=skill_guidelines,
+    )
+
+    assembler = PromptAssembler(
+        system_rules=SUPERVISOR_SYSTEM_PROMPT,
+        tool_schemas=active_tools,
+        skill_catalog=skill_builder.assemble,
+        l4_docs={},
+    )
+    prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
+
+    middleware = []
+
+    # (2) Guardrails
+    guardrail_cfg = _load_config("./configs/guardrail.config", {"guardrail_enabled": False})
+    if guardrail_cfg.get("guardrail_enabled"):
+        guard_model = model_cfg.get("model_name", "gemini-3.8-flash")
+        safety_cfg = guardrail_cfg.get("input_safety", {})
+        if safety_cfg.get("enabled", True):
+            middleware.append(InputSafetyGuardrail(
+                model=guard_model,
+                fail_mode=safety_cfg.get("fail_mode", "open"),
+            ))
+        topic_cfg = guardrail_cfg.get("topic_alignment", {})
+        if topic_cfg.get("enabled", True):
+            middleware.append(TopicAlignmentGuardrail(
+                model=guard_model,
+                allowed_topics=topic_cfg.get("allowed_topics"),
+                blocked_topics=topic_cfg.get("blocked_topics"),
+                fail_mode=topic_cfg.get("fail_mode", "open"),
+            ))
+
+    # (3) Memory & Prompt
+    middleware.extend([memory_mw, prompt_mw])
+
+    # (4) Human-in-the-Loop
+    hitl_cfg = _load_config("./configs/hitl.config", {"hitl_enabled": False})
+    if hitl_cfg.get("hitl_enabled"):
+        interrupt_on = hitl_cfg.get("interrupt_on", {})
+        middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+
+    # (5) Self-Recovery
+    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
+    middleware.extend([
+        ModelFallbackMiddleware(
+            max_retries=2,
+            initial_delay=0.5,
+            fallback_model_name=backup_model
+        ),
+        ToolErrorHandlerMiddleware(max_retries=0),
+        ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
+    ])
+
+    main_agent = create_agent(
+        model=llm,
+        tools=active_tools,
+        middleware=middleware,
+        checkpointer=checkpointer,
+        context_schema=AgentContext,
+    )
+
+    main_agent.registered_tools = active_tools
+    main_agent.registered_middlewares = middleware
+    main_agent.checkpointer_conn = conn
+    main_agent.episodic_store = episodic_store
+    main_agent.semantic_store = semantic_store
+    main_agent.assembler = assembler
+    main_agent.memory_middleware = memory_mw
+
+    return main_agent
 ```
+</details>
 
 ---
 
@@ -103,7 +285,7 @@ python tests/test_mission06.py
 ======================================================================
 🧪 [Mission 06] Guardrails (입력 보안 & 주제 정렬) 거버넌스 검증 시작
 ======================================================================
-  ✅ Test 1 통과: configs/guardrail.config 규격 확인 완료
+  ✅ Test 1 통과: configs/guardrail.config 규격 및 main_agent 가드레일 장착 확인 완료
   🛡️ 가드레일 응답: 🛡️ [Safety Guard Blocked] 보안 정책 위배(S4)로 차단되었습니다...
   ✅ Test 2 통과: 프롬프트 인젝션 시도 선제 차단 (InputSafetyGuardrail)
   🛑 가드레일 응답: 🛑 [Topic Guard Blocked] 요청하신 질문은 서비스 정책상 다루지 않는 화제입니다...
@@ -154,5 +336,6 @@ python tests/test_mission06.py
 
 - [ ] OWASP Top 10 for LLM 위협 카테고리(S1~S5) 및 NeMo 주제 일치 원리를 이해했다.
 - [ ] `configs/guardrail.config`에서 `guardrail_enabled: true`로 활성화했다.
+- [ ] `app/agents/main_agent/agent.py`의 미들웨어 파이프라인 앞단(`MemoryMiddleware` 앞)에 `InputSafetyGuardrail`, `TopicAlignmentGuardrail`을 마운트했다.
 - [ ] `python tests/test_mission06.py`를 실행하여 4개 테스트를 100% 통과했다.
 - [ ] Chainlit UI에서 탈옥 공격 차단, 정치 논쟁 대안 유도, 정상 업무 무사 통과 3대 시나리오를 검증했다.

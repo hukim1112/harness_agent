@@ -54,6 +54,7 @@ graph TD
 4. **에이전트 프로필 (`AGENT_METADATA`)**:
    - `name`: 시스템 내부 식별자 및 API 라우팅 경로 (`/agents/chatbot/invoke`)
    - `description`: Chainlit UI 상단 프로필 선택 메뉴에 노출되는 설명문
+   - `roles`: 에이전트 역할 목록 (`["main"]`: UI 대화 전용 / `["main", "sub"]`: 오케스트레이터가 위임 호출할 수 있는 서브에이전트 겸용)
 
 ---
 

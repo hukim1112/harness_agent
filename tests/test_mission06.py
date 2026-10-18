@@ -38,7 +38,18 @@ async def run_mission06_test():
 
     assert "input_safety" in cfg, "❌ guardrail.config에 'input_safety' 설정이 없습니다."
     assert "topic_alignment" in cfg, "❌ guardrail.config에 'topic_alignment' 설정이 없습니다."
-    print("  ✅ Test 1 통과: configs/guardrail.config 규격 확인 완료")
+
+    import inspect
+    from app.agents.main_agent import agent as main_agent_mod
+    code_lines = [
+        line for line in inspect.getsource(main_agent_mod.create_agent_executor).splitlines()
+        if not line.strip().startswith("#")
+    ]
+    active_code = "\n".join(code_lines)
+    assert "InputSafetyGuardrail" in active_code and "TopicAlignmentGuardrail" in active_code, (
+        "❌ app/agents/main_agent/agent.py의 create_agent_executor 내부에 InputSafetyGuardrail / TopicAlignmentGuardrail이 장착되지 않았습니다."
+    )
+    print("  ✅ Test 1 통과: configs/guardrail.config 규격 및 main_agent 가드레일 장착 확인 완료")
 
     # 2. 가드레일 미들웨어 인스턴스 초기화 (노트북 7번 기반)
     from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail

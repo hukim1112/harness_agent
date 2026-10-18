@@ -37,7 +37,18 @@ async def run_mission07_test():
         cfg = json.load(f)
 
     assert "logging_enabled" in cfg, "❌ logging.config에 'logging_enabled' 항목이 없습니다."
-    print("  ✅ Test 1 통과: configs/logging.config 규격 확인 완료")
+
+    import inspect
+    from app.agents.main_agent import agent as main_agent_mod
+    code_lines = [
+        line for line in inspect.getsource(main_agent_mod.create_agent_executor).splitlines()
+        if not line.strip().startswith("#")
+    ]
+    active_code = "\n".join(code_lines)
+    assert "AgentLogTracer" in active_code, (
+        "❌ app/agents/main_agent/agent.py의 create_agent_executor 내부에 AgentLogTracer가 장착되지 않았습니다."
+    )
+    print("  ✅ Test 1 통과: configs/logging.config 규격 및 main_agent AgentLogTracer 장착 확인 완료")
 
     # 2. AgentLogTracer 미들웨어 장착 테스트 에이전트 빌드 (노트북 7번 기반)
     from app.middleware.observability import AgentLogTracer

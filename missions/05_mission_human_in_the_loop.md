@@ -49,24 +49,194 @@
 
 ---
 
-### 2단계: `app/agents/main_agent/agent.py` 미들웨어 마운트 확인
+### 2단계: `app/agents/main_agent/agent.py`에 HITL 미들웨어 직접 장착하기
 
-`app/agents/main_agent/agent.py`는 초기화 시 `hitl.config`를 읽어 `hitl_enabled: true`인 경우 `HumanInTheLoopMiddleware`를 자동으로 미들웨어 파이프라인에 결합합니다:
+`app/agents/main_agent/agent.py`를 열고, `configs/hitl.config`를 읽어 `hitl_enabled: true`인 경우 `HumanInTheLoopMiddleware`를 파이프라인에 동적으로 결합하도록 코드를 수정합니다.
+
+> 📌 **미들웨어 파이프라인 위치 안내** (상세 순서: [`MIDDLEWARE_PIPELINE_REFERENCE.md`](./MIDDLEWARE_PIPELINE_REFERENCE.md) 참고):  
+> Mission 05부터는 이후 추가될 가드레일(Mission 06)과 감사 로깅(Mission 07)의 삽입 위치를 고려하여, 기존의 단일 리스트(`middleware = [...]`) 선언을 **`middleware = []` 빈 리스트 + 단계별 `.extend()` / `.append()` 구조**로 전환합니다.  
+> `HumanInTheLoopMiddleware`는 **`[Memory, Prompt]` 바로 뒤, `[Self-Recovery 3종]` 바로 앞**에 배치합니다.
+
+1. 파일 상단에 `HumanInTheLoopMiddleware` 임포트를 추가합니다:
+   ```python
+   from langchain.agents.middleware import HumanInTheLoopMiddleware
+   ```
+
+2. `create_agent_executor()` 내부의 **10번 미들웨어 파이프라인 구간**을 아래와 같이 수정합니다:
+   ```python
+   # 10. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
+   middleware = []
+
+   # (3) Memory & Prompt — 메모리 도구 필터링 → 5계층 프롬프트 조립
+   middleware.extend([memory_mw, prompt_mw])
+
+   # (4) Human-in-the-Loop — 지정 도구(roll_dice) 실행 전 사용자 승인 게이트
+   hitl_cfg = _load_config("./configs/hitl.config", {"hitl_enabled": False})
+   if hitl_cfg.get("hitl_enabled"):
+       interrupt_on = hitl_cfg.get("interrupt_on", {})
+       middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+
+   # (5) Self-Recovery Circuit Breakers — 모델/도구 장애 자동 복구
+   backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
+   middleware.extend([
+       ModelFallbackMiddleware(
+           max_retries=2,
+           initial_delay=0.5,
+           fallback_model_name=backup_model
+       ),
+       ToolErrorHandlerMiddleware(max_retries=0),
+       ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
+   ])
+   ```
+
+<details>
+<summary><b>👉 완성된 <code>app/agents/main_agent/agent.py</code> 전체 코드 (Mission 05 시점 참고용)</b></summary>
 
 ```python
-# app/agents/main_agent/agent.py 내부
-from app.tools.custom_tools import roll_dice, convert_currency
+import os
+import json
+from pathlib import Path
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
-# 1. roll_dice 도구 바인딩
-active_tools = list(tools_supervisor) + list(memory_tools) + [roll_dice, convert_currency]
+from app.utils import init_chat_model
+from app.utils.context import AgentContext
+from .prompt import SUPERVISOR_SYSTEM_PROMPT
+from .tools import tools_supervisor
+from app.tools.custom_tools import roll_dice, convert_currency
+from app.middleware.memory import SemanticMemoryStore, EpisodicStore, MemoryMiddleware
+from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
+from app.middleware.error_control.self_recovery import (
+    ModelFallbackMiddleware,
+    ToolErrorHandlerMiddleware,
+    ModelCallLimitMiddleware,
+)
 
-# 2. HITL 미들웨어 동적 구성
-hitl_cfg = _load_config("./configs/hitl.config", {"hitl_enabled": False})
-if hitl_cfg.get("hitl_enabled"):
-    interrupt_on = hitl_cfg.get("interrupt_on", {})
-    middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+SKILLS_DIR = Path(__file__).resolve().parent / "skills"
+
+AGENT_METADATA = {
+    "name": "main_agent",
+    "description": "하네스 기능을 연결할 메인 오케스트레이터 에이전트",
+    "roles": ["main"],
+}
+
+
+def _load_config(path: str, default: dict) -> dict:
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default
+
+
+async def create_agent_executor(checkpointer=None):
+    model_cfg = _load_config("./configs/model.config", {
+        "model_name": "gemini-3.8-flash",
+        "temperature": 0.0,
+    })
+    llm = init_chat_model(
+        model=model_cfg.get("model_name", "gemini-3.8-flash"),
+        temperature=model_cfg.get("temperature", 0.0)
+    )
+
+    db_dir = "app/database"
+    os.makedirs(db_dir, exist_ok=True)
+    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
+
+    conn = None
+    if checkpointer is None:
+        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA busy_timeout=5000;")
+        checkpointer = AsyncSqliteSaver(conn)
+        await checkpointer.setup()
+
+    memory_cfg = _load_config("./configs/memory.config", {})
+    sem_cfg = memory_cfg.get("semantic_memory", {})
+    epi_cfg = memory_cfg.get("episodic_memory", {})
+
+    memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
+    os.makedirs(memory_dir, exist_ok=True)
+    semantic_store = SemanticMemoryStore(
+        memory_dir=memory_dir,
+        memory_char_limit=4000,
+        user_char_limit=2000,
+    )
+    semantic_store.load_from_disk()
+
+    episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
+    os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
+    episodic_store = EpisodicStore(db_path=episodic_db_path)
+    await episodic_store.setup()
+
+    memory_mw = MemoryMiddleware(
+        semantic_store=semantic_store,
+        episodic_store=episodic_store,
+        review_llm=llm,
+        top_k=epi_cfg.get("top_k_prefetch", 2),
+    )
+    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
+
+    skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
+    skill_builder = SkillPromptBuilder(
+        skills_dirs=[str(SKILLS_DIR)],
+        guidelines_path=skill_guidelines,
+    )
+
+    assembler = PromptAssembler(
+        system_rules=SUPERVISOR_SYSTEM_PROMPT,
+        tool_schemas=active_tools,
+        skill_catalog=skill_builder.assemble,
+        l4_docs={},
+    )
+    prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
+
+    middleware = []
+
+    # (3) Memory & Prompt
+    middleware.extend([memory_mw, prompt_mw])
+
+    # (4) Human-in-the-Loop
+    hitl_cfg = _load_config("./configs/hitl.config", {"hitl_enabled": False})
+    if hitl_cfg.get("hitl_enabled"):
+        interrupt_on = hitl_cfg.get("interrupt_on", {})
+        middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
+
+    # (5) Self-Recovery
+    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
+    middleware.extend([
+        ModelFallbackMiddleware(
+            max_retries=2,
+            initial_delay=0.5,
+            fallback_model_name=backup_model
+        ),
+        ToolErrorHandlerMiddleware(max_retries=0),
+        ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
+    ])
+
+    main_agent = create_agent(
+        model=llm,
+        tools=active_tools,
+        middleware=middleware,
+        checkpointer=checkpointer,
+        context_schema=AgentContext,
+    )
+
+    main_agent.registered_tools = active_tools
+    main_agent.registered_middlewares = middleware
+    main_agent.checkpointer_conn = conn
+    main_agent.episodic_store = episodic_store
+    main_agent.semantic_store = semantic_store
+    main_agent.assembler = assembler
+    main_agent.memory_middleware = memory_mw
+
+    return main_agent
 ```
+</details>
 
 ---
 
@@ -84,7 +254,7 @@ python tests/test_mission05.py
 🧪 [Mission 05] Human-in-the-Loop (roll_dice 권한 게이트) 검증 시작
 ======================================================================
   ✅ Test 1 통과: configs/hitl.config 규격 및 roll_dice 타깃 인터럽트 설정 확인
-  ✅ Test 2 통과: main_agent 내 roll_dice 도구 등록 확인
+  ✅ Test 2 통과: main_agent 내 roll_dice 도구 및 HumanInTheLoopMiddleware 장착 확인
   ✅ Test 3 통과: 주사위 굴리기 요청 시 __interrupt__ 정상 발생 및 페이로드 검증
   ✅ Test 4 통과: [승인(Approve)] 결정 주입 시 정상 재개 및 주사위 실행 완료
   ✅ Test 5 통과: [거부(Reject)] 결정 주입 시 도구 미실행 및 거절 응답 완료
@@ -134,6 +304,7 @@ chainlit run app/chainlit_ui.py --port 8080
 ## 🏆 Mission 05 완료 체크리스트
 
 - [ ] 도구 보안 등급제(Security Tiering)와 권한 게이트(HITL) 원리를 이해했다.
-- [ ] `configs/hitl.config`에서 `roll_dice`를 인터럽트 대상으로 설정했다.
+- [ ] `configs/hitl.config`에서 `"hitl_enabled": true` 및 `roll_dice` 인터럽트 대상을 설정했다.
+- [ ] `app/agents/main_agent/agent.py`에 `HumanInTheLoopMiddleware`를 동적으로 마운트했다.
 - [ ] `python tests/test_mission05.py`를 실행하여 5개 단위 테스트를 100% 통과했다.
 - [ ] Chainlit UI에서 주사위 굴리기 시 승인/거부 팝업이 뜨고 결정에 따라 안전하게 재개됨을 확인했다.

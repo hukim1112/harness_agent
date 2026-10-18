@@ -144,17 +144,16 @@ async def create_agent_executor(checkpointer=None):
     episodic_store = EpisodicStore(db_path=episodic_db_path)
     await episodic_store.setup()
 
-    # 7. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 + 훅)
+    # 7. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 훅)
     memory_mw = MemoryMiddleware(
         semantic_store=semantic_store,
         episodic_store=episodic_store,
         review_llm=llm,
         top_k=epi_cfg.get("top_k_prefetch", 2),
     )
-    memory_tools = memory_mw.get_tools()
 
-    # 8. 전체 도구 세트 통합 (Supervisor 15종 + Memory 2종 + Custom 2종 = 19종)
-    active_tools = list(tools_supervisor) + list(memory_tools) + [roll_dice, convert_currency]
+    # 8. 도구 바인딩 (Supervisor 15종 + Custom 2종 = 17종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 19종)
+    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
 
     # 9. Claude Code 표준 5-Layer Prompt Assembler 구성
     #    - 스킬: 에이전트 내장 skills/ 만 스캔 (Mission 04 금융 스킬도 이 폴더에 설치)
@@ -244,6 +243,7 @@ async def create_agent_executor(checkpointer=None):
 
     # 리소스 정리 및 검증용 참조 보존 (테스트 스크립트에서 접근)
     main_agent.registered_tools = active_tools
+    main_agent.registered_middlewares = middleware
     main_agent.checkpointer_conn = conn
     main_agent.episodic_store = episodic_store
     main_agent.semantic_store = semantic_store

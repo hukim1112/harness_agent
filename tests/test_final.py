@@ -66,12 +66,31 @@ async def run_final_test():
     print("📦 Test 1/7: main_agent 전체 빌드 (미들웨어 + 도구 통합 마운트)")
     print("─" * 70)
     try:
+        import inspect
         from app.agents import main_agent as ma_module
+        from app.agents.main_agent import agent as main_agent_mod
         agent = await ma_module.create_agent_executor()
-        tool_count = len(getattr(agent, "registered_tools", []))
+        all_tools = []
+        if hasattr(agent, "nodes") and "tools" in agent.nodes:
+            tools_node = agent.nodes["tools"]
+            bound_node = getattr(tools_node, "bound", tools_node)
+            if hasattr(bound_node, "tools_by_name"):
+                all_tools = list(bound_node.tools_by_name.values())
+        if not all_tools:
+            all_tools = list(getattr(agent, "registered_tools", []))
+        tool_count = len(all_tools)
+        code_lines = [
+            line for line in inspect.getsource(main_agent_mod.create_agent_executor).splitlines()
+            if not line.strip().startswith("#")
+        ]
+        active_code = "\n".join(code_lines)
+        has_all_mw = all(
+            mw_name in active_code
+            for mw_name in ("MemoryMiddleware", "HumanInTheLoopMiddleware", "InputSafetyGuardrail", "TopicAlignmentGuardrail", "AgentLogTracer")
+        )
         check(
-            f"main_agent 빌드 성공 (도구 {tool_count}종 바인딩)",
-            agent is not None and tool_count >= 17
+            f"main_agent 빌드 성공 (도구 {tool_count}종 바인딩 + 전 미들웨어 마운트)",
+            agent is not None and tool_count >= 19 and has_all_mw
         )
     except Exception as e:
         check("main_agent 빌드 성공", False, str(e))

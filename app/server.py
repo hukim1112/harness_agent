@@ -57,7 +57,7 @@ from app.utils.workspace import resolve_session_workspace
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("LLMOps_Server")
 
-DEFAULT_RECURSION_LIMIT = 100
+DEFAULT_RECURSION_LIMIT = 250
 
 
 def load_config(file_path: str, default: dict) -> dict:
