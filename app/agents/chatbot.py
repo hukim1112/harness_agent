@@ -9,10 +9,10 @@ app/agents/chatbot.py — 3대 코어 요소 및 서비스 메타데이터가 �
 import os
 import json
 import aiosqlite
+from datetime import date
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 from app.utils import init_chat_model
-from app.prompts import CHATBOT_SYSTEM_PROMPT
 from app.tools import tools_chatbot
 from app.utils.context import AgentContext
 
@@ -21,8 +21,18 @@ from app.utils.context import AgentContext
 # -------------------------------------------------------------------------------
 AGENT_METADATA = {
     "name": "chatbot",
-    "description": "3대 코어(프롬프트, 도구, 단기메모리)가 탑재된 친근한 고양이 챗봇"
+    "description": "3대 코어(프롬프트, 도구, 단기메모리)가 탑재된 친근한 고양이 챗봇",
+    "roles": ["main"],  # main: UI 대화 전용 (서브에이전트 위임 대상 제외)
 }
+
+CHATBOT_SYSTEM_PROMPT = f"""당신은 귀엽고 친밀한 고양이 페르소나를 가진 챗봇 에이전트입니다.
+사용자의 질문에 대해 재치있고 흥미롭게 대화를 하세요. 답변은 한국어로 제공하세요.
+
+[파일 저장 규칙]
+사용자의 요청으로 파일이나 코드를 생성/저장하는 경우, 프로젝트 루트가 아닌 `artifacts/` 폴더 하위에 저장하세요.
+
+오늘의 날짜 : {date.today().strftime("%Y-%m-%d")}
+"""
 
 # -------------------------------------------------------------------------------
 # 🎯 [Mission 01 실습 안내]

@@ -72,7 +72,7 @@ missions/
 ├── 01_mission_add_custom_tool.md           # 🛠️ 커스텀 도구(주사위/환율) 구현 및 챗봇 바인딩
 ├── 02_mission_self_recovery_and_subagent.md# 🛡️ 3대 자가 복구 미들웨어 & 서브에이전트 오케스트레이션
 ├── 03_mission_prompt_and_memory.md         # 🧠 Claude Code 프롬프트 조립기 & 백그라운드 에피소딕 메모리
-├── 04_mission_skills.md                    # 🧰 금융 분석 전문 스킬(10종) 동적 카탈로그 주입 & 대시보드
+├── 04_mission_skills.md                    # 🧰 금융 분석 전문 스킬(12종) 동적 카탈로그 주입 & 대시보드
 ├── 05_mission_human_in_the_loop.md         # 🛑 roll_dice 타깃 HITL 권한 게이트 & 웹 대화형 승인/거절
 ├── 06_mission_guardrails.md                # 🛡️ 프롬프트 인젝션(S4) 선제 차단 & 오프토픽 대체 안내
 ├── 07_mission_logging_and_observability.md # 📊 비동기 감사 궤적 적재 & 세션 데이터 분석 대시보드
@@ -144,9 +144,9 @@ harness_agent/
 │   ├── guardrail.config    #   └── 입력 보안 및 주제 차단 목록 설정
 │   └── logging.config      #   └── 비동기 감사 로그 적재 경로 설정
 ├── app/                    # 🧠 프로덕션 에이전트 시스템 코어
-│   ├── agents/             #   ├── 에이전트 패키지 (chatbot.py, main_agent/, analyst/, scraper/)
+│   ├── agents/             #   ├── 에이전트 패키지 (chatbot.py, main_agent/, analyst/, scraper/ — 각 에이전트별 prompt.py/tools.py 포함)
 │   ├── tools/              #   ├── 내장 도구 및 커스텀 도구 모음 (custom_tools 등)
-│   ├── prompts/            #   ├── 시스템 프롬프트 및 지침서 (SUPERVISOR, ANALYST, SCRAPER 등)
+│   ├── prompts/            #   ├── 공용 스킬 실행 지침서 (SKILL.md)
 │   ├── middleware/         #   ├── 하네스 미들웨어 모음
 │   │   ├── memory/         #   │   └── 시맨틱/에피소딕 계층형 메모리 미들웨어
 │   │   ├── prompt/         #   │   └── Claude Code 5-Layer 프롬프트 조립기
@@ -160,7 +160,6 @@ harness_agent/
 │   └── client.py           #   └── 터미널 대화형 CLI 클라이언트
 ├── skills/                 # 🧰 공용 Progressive Skills 패키지 (mcp, pdf_processing)
 ├── artifacts/              # 📂 사용자/세션별 격리 워크스페이스, 메모리, 스킬 풀 및 로그 적재소
-│   └── skills_pool/        #   └── 교육생 실습용 금융 스킬 풀 (10종)
 ├── install/                # 🚀 자동 설치 스크립트 (requirements.txt 포함)
 └── README.md               # 📖 메인 프로젝트 설명서
 ```

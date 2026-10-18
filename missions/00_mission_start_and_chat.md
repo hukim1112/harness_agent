@@ -11,8 +11,7 @@
 
 | 파일 경로 | 역할 | 실습 중 관찰 및 확인할 내용 |
 | :--- | :--- | :--- |
-| `app/agents/chatbot.py` | 에이전트 팩토리 | 3대 코어 요소(프롬프트, 도구, 단기기억) 및 서비스 메타데이터(프로필) 조립 구조 확인 |
-| `app/prompts/CHATBOT.py` | 시스템 프롬프트 | 고양이 페르소나 및 응답 제약사항 정의 |
+| `app/agents/chatbot.py` | 에이전트 팩토리 | 3대 코어 요소(시스템 프롬프트 `CHATBOT_SYSTEM_PROMPT`, 도구, 단기기억) 및 서비스 메타데이터(프로필) 조립 구조 확인 |
 | `app/server.py` | FastAPI 백엔드 서버 | `app/agents/` 디렉토리 자동 스캔 및 SSE 스트리밍 서빙 |
 | `app/chainlit_ui.py` | Chainlit 프론트엔드 UI | 서버에서 에이전트 프로필을 동적으로 불러와 렌더링 |
 

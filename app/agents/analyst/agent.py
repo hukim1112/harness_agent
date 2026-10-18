@@ -39,6 +39,7 @@ SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 AGENT_METADATA = {
     "name": "analyst",
     "description": "데이터 분석·시각화·보고서 전문 에이전트 — 데이터 프로파일링, 차트 생성, Excel/HTML 보고서를 생성합니다.",
+    "roles": ["main", "sub"],  # main: UI 대화 대상 / sub: Supervisor 위임 대상
 }
 
 
