@@ -5,29 +5,13 @@
 
 ---
 
-## 📢 v2.0 아키텍처 전면 개편 안내
-
-최신 프로덕션 AI 에이전트 하네스 표준과 생태계에 맞춰 코드베이스를 전면 재설계했습니다.
-
-| 구분 | v1.0 (Legacy) | v2.0 (Current) |
-| :--- | :--- | :--- |
-| **웹 UI 프론트엔드** | Streamlit (`app/ui.py`) | **Chainlit (`app/chainlit_ui.py`, 포트 `8080`, SSE 스트리밍 & HITL 버튼 연동)** |
-| **프롬프트 아키텍처** | 단일 문자열 템플릿 | **Claude Code 표준 5-Layer Prompt Assembler (JIT Dynamic Assembly)** |
-| **메모리 시스템** | 단순 대화 체크포인터 | **2-Stage JIT 계층형 메모리 (Semantic Memory + Daemon Background Episodic Store)** |
-| **도구 확장 메커니즘** | 정적 함수 바인딩 | **Progressive Skills (Frontmatter 경량 인덱싱 & 토큰 90% 절약형 동적 실행)** |
-| **권한 및 보안 제어** | 없음 (완전자율) | **Human-in-the-Loop (`__interrupt__` 기반 권한 게이트 & 웹 승인/거부 인터랙션)** |
-| **안전 거버넌스** | 없음 | **Llama Guard 3 S1~S5 입력 보안 필터 & NeMo 규정 일치 리디렉션 가드레일** |
-| **관측성 및 로깅** | 단순 콘솔 출력 | **`AgentLogTracer` 비동기 큐 기반 감사 궤적 적재 & `log_analyzer` 통계 대시보드** |
-| **런타임 프레임워크** | LangChain 구버전 | **LangChain 1.3+ / LangGraph 1.2+ / Python 3.12 (WSL2 및 Codespaces 최적화)** |
-
----
-
 ## 🚀 시작하기 (환경 세팅)
 
 ### 1. GitHub Codespaces 환경 (권장)
 GitHub Codespaces 환경에서는 사전 빌드된 Docker 컨테이너를 기반으로 구동되므로, **별도의 패키지 설치 없이 즉시 실행**할 수 있습니다.
 1. 리포지토리 상단의 **[Code] ➔ [Codespaces] ➔ [Create codespace on main]**을 클릭합니다.
-2. 컨테이너가 열리면 프로젝트 루트의 `.env` 파일을 확인하고 API 키를 입력합니다.
+2. 컨테이너 기동 시 프로젝트 루트에 `.env` 파일이 자동 생성되며, 필요한 인증 시크릿이 함께 구성됩니다.
+3. 생성된 `.env` 파일을 열고 사용할 3가지 필수 API 키(`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `TAVILY_API_KEY`)를 입력합니다.
 
 ### 2. 로컬 환경 (WSL2 / Linux 수동 설치)
 로컬 우분투 또는 WSL2 환경에서 직접 실행할 경우 자동 설치 스크립트를 사용하세요:
@@ -39,12 +23,15 @@ bash install_all.sh
 ```
 
 ### 🔑 환경 변수 설정 (`.env`)
-프로젝트 루트에 생성된 `.env` 파일에 사용할 API 키를 설정합니다:
+프로젝트 루트에 생성된 `.env` 파일에 사용할 API 키 3개(Google, OpenAI, Tavily)를 설정합니다:
 
 ```env
-GOOGLE_API_KEY="your-gemini-api-key"
+GOOGLE_API_KEY="your-google-api-key"
 OPENAI_API_KEY="your-openai-api-key"
+TAVILY_API_KEY="your-tavily-api-key"
 ```
+> 💡 **Tavily API 키 발급 안내**:  
+> 에이전트의 실시간 웹 검색(`web_search`) 기능을 사용하려면 **[tavily.com](https://tavily.com)** 에 접속하여 회원가입 후 무료 API 키를 발급받아 `TAVILY_API_KEY`에 입력하세요.
 
 ### 📊 LangSmith 트레이싱 및 관측성 설정 (선택 사항)
 LangSmith를 통한 실시간 호출 궤적 시각화가 필요한 경우 아래 환경 변수를 추가합니다:
@@ -188,3 +175,21 @@ harness_agent/
 - [NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)
 - [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
 - [LangSmith](https://smith.langchain.com)
+
+---
+
+## 📢 v2.0 아키텍처 전면 개편 안내
+
+최신 프로덕션 AI 에이전트 하네스 표준과 생태계에 맞춰 코드베이스를 전면 재설계했습니다.
+
+| 구분 | v1.0 (Legacy) | v2.0 (Current) |
+| :--- | :--- | :--- |
+| **웹 UI 프론트엔드** | Streamlit (`app/ui.py`) | **Chainlit (`app/chainlit_ui.py`, 포트 `8080`, SSE 스트리밍 & HITL 버튼 연동)** |
+| **프롬프트 아키텍처** | 단일 문자열 템플릿 | **Claude Code 표준 5-Layer Prompt Assembler (JIT Dynamic Assembly)** |
+| **메모리 시스템** | 단순 대화 체크포인터 | **2-Stage JIT 계층형 메모리 (Semantic Memory + Daemon Background Episodic Store)** |
+| **도구 확장 메커니즘** | 정적 함수 바인딩 | **Progressive Skills (Frontmatter 경량 인덱싱 & 토큰 90% 절약형 동적 실행)** |
+| **권한 및 보안 제어** | 없음 (완전자율) | **Human-in-the-Loop (`__interrupt__` 기반 권한 게이트 & 웹 승인/거부 인터랙션)** |
+| **안전 거버넌스** | 없음 | **Llama Guard 3 S1~S5 입력 보안 필터 & NeMo 규정 일치 리디렉션 가드레일** |
+| **관측성 및 로깅** | 단순 콘솔 출력 | **`AgentLogTracer` 비동기 큐 기반 감사 궤적 적재 & `log_analyzer` 통계 대시보드** |
+| **런타임 프레임워크** | LangChain 구버전 | **LangChain 1.3+ / LangGraph 1.2+ / Python 3.12 (WSL2 및 Codespaces 최적화)** |
+
