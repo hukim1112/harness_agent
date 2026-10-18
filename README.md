@@ -76,7 +76,8 @@ missions/
 ├── 05_mission_human_in_the_loop.md         # 🛑 roll_dice 타깃 HITL 권한 게이트 & 웹 대화형 승인/거절
 ├── 06_mission_guardrails.md                # 🛡️ 프롬프트 인젝션(S4) 선제 차단 & 오프토픽 대체 안내
 ├── 07_mission_logging_and_observability.md # 📊 비동기 감사 궤적 적재 & 세션 데이터 분석 대시보드
-└── 08_mission_final_integration_test.md    # 🎓 전 과정 통합 졸업 검증 (7/7 E2E 테스트)
+├── 08_mission_final_integration_test.md    # 🎓 전 과정 통합 졸업 검증 (7/7 E2E 테스트)
+└── MIDDLEWARE_PIPELINE_REFERENCE.md        # 📐 통합 미들웨어 파이프라인 실행 순서 레퍼런스
 ```
 
 ---
@@ -120,7 +121,7 @@ python -m app.utils.log_analyzer
 | 테스트 파일 | 대응 미션 | 주요 검증 내용 | 실행 명령어 |
 | :--- | :--- | :--- | :--- |
 | **`test_mission01.py`** | Mission 01 | 커스텀 도구 2종 및 `chatbot.py` 바인딩 검증 | `python tests/test_mission01.py` |
-| **`test_mission02.py`** | Mission 02 | `main_agent/agent.py` 자가 복구 미들웨어 3종 & 도구 15종 결합 | `python tests/test_mission02.py` |
+| **`test_mission02.py`** | Mission 02 | `main_agent/agent.py` 자가 복구 미들웨어 3종 & 핵심 위임/기획 도구 바인딩 결합 | `python tests/test_mission02.py` |
 | **`test_mission03.py`** | Mission 03 | 5-Layer 프롬프트 조립 & 메모리 + **실물 시각화** | `python tests/test_mission03.py` |
 | **`test_mission04.py`** | Mission 04 | `main_agent/skills/` 동적 확장 & Layer 2.2 자동 주입 + **실물 시각화** | `python tests/test_mission04.py` |
 | **`test_mission05.py`** | Mission 05 | HITL (`roll_dice` 타깃 권한 게이트 & 승인/거부 재개) | `python tests/test_mission05.py` |
@@ -142,11 +143,13 @@ harness_agent/
 │   ├── memory.config       #   └── 세션 메모리 활성화 설정
 │   ├── hitl.config         #   └── roll_dice 타깃 HITL 권한 게이트 설정
 │   ├── guardrail.config    #   └── 입력 보안 및 주제 차단 목록 설정
-│   └── logging.config      #   └── 비동기 감사 로그 적재 경로 설정
+│   └── logging.config      #   └── 비동기 감사 로깅 활성화 설정
 ├── app/                    # 🧠 프로덕션 에이전트 시스템 코어
 │   ├── agents/             #   ├── 에이전트 패키지 (chatbot.py, main_agent/, analyst/, scraper/ — 각 에이전트별 prompt.py/tools.py 포함)
 │   ├── tools/              #   ├── 내장 도구 및 커스텀 도구 모음 (custom_tools 등)
 │   ├── prompts/            #   ├── 공용 스킬 실행 지침서 (SKILL.md)
+│   ├── database/           #   ├── SQLite 단기 체크포인터(checkpoints.db) 및 FTS5 에피소딕 메모리(episodic.db)
+│   ├── evaluate/           #   ├── LLM-as-a-Judge 정량 채점 및 회귀 테스트 평가 모듈
 │   ├── middleware/         #   ├── 하네스 미들웨어 모음
 │   │   ├── memory/         #   │   └── 시맨틱/에피소딕 계층형 메모리 미들웨어
 │   │   ├── prompt/         #   │   └── Claude Code 5-Layer 프롬프트 조립기
