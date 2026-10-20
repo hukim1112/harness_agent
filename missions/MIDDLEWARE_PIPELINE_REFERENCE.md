@@ -42,41 +42,37 @@ Mission 02~07을 거치며 `app/agents/main_agent/agent.py`에 추가되는 미�
 
 ### Mission 02 완료 시점 (3종)
 ```python
-middleware = [
+middleware = []
+
+# (5) Self-Recovery Circuit Breakers
+middleware.extend([
     ModelFallbackMiddleware(max_retries=2, initial_delay=0.5, fallback_model_name=backup_model),
     ToolErrorHandlerMiddleware(max_retries=0),
     ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
-]
+])
 ```
 
 ### Mission 03 완료 시점 (5종)
 ```python
-middleware = [
-    memory_mw,                       # ← 추가 (가장 앞)
-    prompt_mw,                       # ← 추가
-    ModelFallbackMiddleware(...),
-    ToolErrorHandlerMiddleware(...),
-    ModelCallLimitMiddleware(...),
-]
-```
-
-### Mission 05 완료 시점 — 파이프라인 재구성 (6종)
-
-> [!IMPORTANT]
-> Mission 05부터 **보안 거버넌스 순서**를 고려하여 파이프라인을 재구성합니다.
-> 기존 `middleware = [...]` 방식에서 **빈 리스트 + 순서별 append/extend** 방식으로 전환합니다.
-
-```python
 middleware = []
 
-# (1~3은 아직 비활성 — Mission 06, 07에서 추가됨)
+# (3) Memory & Prompt Assembler ← 추가 (Self-Recovery 앞에 위치!)
+middleware.extend([memory_mw, prompt_mw])
+
+# (5) Self-Recovery Circuit Breakers
+middleware.extend([ModelFallback..., ToolErrorHandler..., ModelCallLimit...])
+```
+
+### Mission 05 완료 시점 (6종)
+```python
+middleware = []
 
 # (3) Memory & Prompt Assembler
 middleware.extend([memory_mw, prompt_mw])
 
-# (4) HITL 동적 구성
+# (4) HITL 동적 구성 ← 추가 ((3)과 (5) 사이에 위치!)
 if hitl_cfg.get("hitl_enabled"):
-    middleware.append(HumanInTheLoopMiddleware(interrupt_on=...))   # ← 추가
+    middleware.append(HumanInTheLoopMiddleware(interrupt_on=...))
 
 # (5) Self-Recovery Circuit Breakers
 middleware.extend([ModelFallback..., ToolErrorHandler..., ModelCallLimit...])
