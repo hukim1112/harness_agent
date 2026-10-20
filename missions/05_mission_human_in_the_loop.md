@@ -54,15 +54,14 @@
 `app/agents/main_agent/agent.py`를 열고, `configs/hitl.config`를 읽어 `hitl_enabled: true`인 경우 `HumanInTheLoopMiddleware`를 파이프라인에 동적으로 결합하도록 코드를 수정합니다.
 
 > 📌 **미들웨어 파이프라인 위치 안내** (상세 순서: [`MIDDLEWARE_PIPELINE_REFERENCE.md`](./MIDDLEWARE_PIPELINE_REFERENCE.md) 참고):  
-> Mission 05부터는 이후 추가될 가드레일(Mission 06)과 감사 로깅(Mission 07)의 삽입 위치를 고려하여, 기존의 단일 리스트(`middleware = [...]`) 선언을 **`middleware = []` 빈 리스트 + 단계별 `.extend()` / `.append()` 구조**로 전환합니다.  
-> `HumanInTheLoopMiddleware`는 **`[Memory, Prompt]` 바로 뒤, `[Self-Recovery 3종]` 바로 앞**에 배치합니다.
+> `HumanInTheLoopMiddleware`는 **`# (3) Memory & Prompt` 바로 뒤, `# (5) Self-Recovery` 바로 앞**에 배치합니다.
 
 1. 파일 상단에 `HumanInTheLoopMiddleware` 임포트를 추가합니다:
    ```python
    from langchain.agents.middleware import HumanInTheLoopMiddleware
    ```
 
-2. `create_agent_executor()` 내부의 **10번 미들웨어 파이프라인 구간**을 아래와 같이 수정합니다:
+2. `create_agent_executor()` 내부의 **10번 미들웨어 파이프라인 구간**에서 `(3) Memory & Prompt`와 `(5) Self-Recovery` 사이에 **`(4) Human-in-the-Loop`** 블록을 추가합니다:
    ```python
    # 10. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
    middleware = []

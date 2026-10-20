@@ -63,10 +63,13 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `A
        ModelCallLimitMiddleware,
    )
    ```
-2. `create_agent_executor` 함수 내부의 **`# 5. 미들웨어 파이프라인`** 구간(`middleware = []`)을 아래와 같이 구성합니다:
+2. `create_agent_executor` 함수 내부의 **`# 5. 미들웨어 파이프라인`** 구간(`middleware = []` 바로 아래)에 아래 Self-Recovery 블록을 추가합니다:
    ```python
+   middleware = []
+
+   # (5) Self-Recovery Circuit Breakers — 모델/도구 장애 자동 복구
    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
-   middleware = [
+   middleware.extend([
        ModelFallbackMiddleware(
            max_retries=2,
            initial_delay=0.5,
@@ -74,8 +77,9 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `A
        ),
        ToolErrorHandlerMiddleware(max_retries=0),
        ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
-   ]
+   ])
    ```
+   > 💡 이후 Mission 03~07에서 추가되는 미들웨어(로깅, 가드레일, 메모리/프롬프트, HITL)는 이 `middleware = []`와 `# (5) Self-Recovery` 사이에 순서대로 끼워 넣게 되므로, 기존 코드를 지우지 않고 그대로 누적 확장할 수 있습니다.
 
 #### 📊 미들웨어 핵심 파라미터 상세 요약
 
@@ -173,8 +177,11 @@ async def create_agent_executor(checkpointer=None):
     active_tools = list(tools_supervisor)
 
     # 5. 미들웨어 파이프라인
+    middleware = []
+
+    # (5) Self-Recovery Circuit Breakers — 모델/도구 장애 자동 복구
     backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
-    middleware = [
+    middleware.extend([
         ModelFallbackMiddleware(
             max_retries=2,
             initial_delay=0.5,
@@ -182,7 +189,7 @@ async def create_agent_executor(checkpointer=None):
         ),
         ToolErrorHandlerMiddleware(max_retries=0),
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
-    ]
+    ])
 
     main_agent = create_agent(
         model=llm,

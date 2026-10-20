@@ -190,12 +190,17 @@ from app.middleware.prompt import (
 
 ### 5단계: 미들웨어 파이프라인 결합 (CRITICAL 순서)
 > ⚠️ **순서 주의**: `memory_mw`가 `prompt_mw`보다 바깥(앞)에 위치해야 꺼진 메모리 도구가 먼저 필터링되어 Layer 2.1 도구 스키마에 반영됩니다. (메모리 인출 자체는 `before_agent` 훅에서 수행되어 Layer 4에 주입됩니다.)
+> `middleware = []` 바로 아래(Mission 02에서 작성한 `# (5) Self-Recovery` 위쪽)에 아래 **`(3) Memory & Prompt`** 블록을 추가합니다:
 ```python
-    # 10. 통합 미들웨어 파이프라인 (순서 중요: Memory -> Prompt -> Self-Recovery)
+    # 10. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
+    middleware = []
+
+    # (3) Memory & Prompt — 메모리 도구 필터링 → 5계층 프롬프트 조립
+    middleware.extend([memory_mw, prompt_mw])
+
+    # (5) Self-Recovery Circuit Breakers — 모델/도구 장애 자동 복구
     backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
-    middleware = [
-        memory_mw,
-        prompt_mw,
+    middleware.extend([
         ModelFallbackMiddleware(
             max_retries=2,
             initial_delay=0.5,
@@ -203,7 +208,7 @@ from app.middleware.prompt import (
         ),
         ToolErrorHandlerMiddleware(max_retries=0),
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
-    ]
+    ])
 ```
 
 ---
@@ -343,10 +348,15 @@ async def create_agent_executor(checkpointer=None):
     )
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 
+    # 10. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
+    middleware = []
+
+    # (3) Memory & Prompt — 메모리 도구 필터링 → 5계층 프롬프트 조립
+    middleware.extend([memory_mw, prompt_mw])
+
+    # (5) Self-Recovery Circuit Breakers — 모델/도구 장애 자동 복구
     backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
-    middleware = [
-        memory_mw,
-        prompt_mw,
+    middleware.extend([
         ModelFallbackMiddleware(
             max_retries=2,
             initial_delay=0.5,
@@ -354,7 +364,7 @@ async def create_agent_executor(checkpointer=None):
         ),
         ToolErrorHandlerMiddleware(max_retries=0),
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
-    ]
+    ])
 
     main_agent = create_agent(
         model=llm,
