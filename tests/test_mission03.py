@@ -123,8 +123,6 @@ async def run_prompt_and_memory_test():
         "cwd": project_root,
         "session_id": sample_sid,
         "os": os.name,
-        "user_permission": "ADMIN",
-        "active_project": "agent_lab",
         "recalled_memory": f"• [Semantic Profile]: {user_entries[0] if user_entries else 'Standard User'}\n• [Episodic Hint]: 과거 세션({search_results[0]['session_id']})에서 Qdrant/FastAPI 아키텍처 논의 완료",
     }
 

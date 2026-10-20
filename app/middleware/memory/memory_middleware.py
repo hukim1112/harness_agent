@@ -573,15 +573,12 @@ class MemoryMiddleware(AgentMiddleware):
         if not messages or len(messages) < 2:
             return None
 
-        base_learning = getattr(ctx, "memory_learning_enabled", True)
         semantic_learning = (
             getattr(ctx, "semantic_memory_enabled", True)
-            and bool(base_learning)
             and getattr(ctx, "semantic_learning_enabled", True)
         )
         episodic_learning = (
             getattr(ctx, "episodic_memory_enabled", True)
-            and bool(base_learning)
             and getattr(ctx, "episodic_learning_enabled", True)
         )
         if not (semantic_learning or episodic_learning):

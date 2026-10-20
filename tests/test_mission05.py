@@ -65,7 +65,7 @@ async def run_mission05_test():
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
     from langchain.agents import create_agent
     from app.utils import init_chat_model, normalize_content
-    from app.utils.context import AgentContext
+    from app.context import AgentContext
     from langchain.agents.middleware import HumanInTheLoopMiddleware
 
     conn = await aiosqlite.connect(":memory:", check_same_thread=False)

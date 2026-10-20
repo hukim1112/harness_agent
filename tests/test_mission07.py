@@ -56,7 +56,7 @@ async def run_mission07_test():
     from app.tools.custom_tools import roll_dice
     from langchain.agents import create_agent
     from app.utils import init_chat_model
-    from app.utils.context import AgentContext
+    from app.context import AgentContext
 
     test_log_dir = os.path.join(project_root, "artifacts", "logs")
     os.makedirs(test_log_dir, exist_ok=True)

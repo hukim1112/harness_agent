@@ -235,10 +235,6 @@ class PromptAssembler:
         ]
         if "user_id" in session_context and session_context["user_id"]:
             session_items.append(f"- User ID: {session_context['user_id']}")
-        if "user_permission" in session_context:
-            session_items.append(f"- User Permission: {session_context['user_permission']}")
-        if "active_project" in session_context:
-            session_items.append(f"- Active Project: {session_context['active_project']}")
         if "git_status" in session_context:
             session_items.append(f"- Git Branch/Status: {session_context['git_status']}")
         if "workspace_dir" in session_context and session_context["workspace_dir"]:
@@ -367,8 +363,6 @@ class PromptAssemblerMiddleware(AgentMiddleware):
             "session_id": session_id,
             "user_id": user_id,
             "os": os.name,
-            "user_permission": getattr(ctx, "user_permission", "GUEST") if ctx else "GUEST",
-            "active_project": getattr(ctx, "active_project", "UNKNOWN") if ctx else "UNKNOWN",
             "recalled_memory": getattr(ctx, "recalled_memory", "") if ctx else "",
         }
 

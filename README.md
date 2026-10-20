@@ -158,6 +158,7 @@ harness_agent/
 │   │   ├── guardrails/     #   │   └── InputSafetyGuardrail & TopicAlignmentGuardrail
 │   │   └── observability/  #   │   └── AgentLogTracer 비동기 감사 로거 및 시각화기
 │   ├── utils/              #   ├── 모델 팩토리, 세션 워크스페이스 격리, log_analyzer 유틸
+│   ├── context.py          #   ├── AgentContext (요청/세션 단위 런타임 실행 컨텍스트 DTO)
 │   ├── server.py           #   ├── FastAPI 에이전트 API 서빙 서버 (SSE 스트리밍)
 │   ├── chainlit_ui.py      #   ├── Chainlit 웹 인터랙티브 채팅 프론트엔드
 │   └── client.py           #   └── 터미널 대화형 CLI 클라이언트

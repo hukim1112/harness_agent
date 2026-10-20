@@ -15,7 +15,7 @@ from langchain.agents import create_agent
 from app.utils import init_chat_model
 from app.tools import tools_chatbot
 from app.tools.custom_tools import roll_dice, convert_currency
-from app.utils.context import AgentContext
+from app.context import AgentContext
 
 # 1. 서비스 메타데이터 (FastAPI 레지스트리 및 Chainlit UI ChatProfile 자동 등록)
 AGENT_METADATA = {

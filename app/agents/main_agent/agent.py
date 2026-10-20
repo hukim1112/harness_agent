@@ -52,7 +52,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.utils import init_chat_model
-from app.utils.context import AgentContext
+from app.context import AgentContext
 
 from .prompt import SUPERVISOR_SYSTEM_PROMPT
 from .tools import tools_supervisor

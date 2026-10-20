@@ -254,7 +254,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 
 from app.utils import init_chat_model
-from app.utils.context import AgentContext
+from app.context import AgentContext
 from .prompt import SUPERVISOR_SYSTEM_PROMPT
 from .tools import tools_supervisor
 from app.tools.custom_tools import roll_dice, convert_currency
