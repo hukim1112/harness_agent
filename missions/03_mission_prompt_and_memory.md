@@ -164,7 +164,8 @@ from app.middleware.prompt import (
 ---
 
 ### 4단계: Claude Code 5-Layer Prompt Assembler 조립
-스킬 카탈로그 빌더와 5계층 프롬프트 조립기를 구성하고, LangChain AgentMiddleware로 래핑합니다:
+스킬 카탈로그 빌더와 5계층 프롬프트 조립기를 구성하고, LangChain AgentMiddleware로 래핑합니다.
+> ⚠️ **변수 선언 순서 주의**: `PromptAssembler(tool_schemas=active_tools, ...)`에서 `active_tools` 변수를 인자로 전달하므로, **`active_tools` 선언이 반드시 `PromptAssembler` 생성보다 위쪽에 위치**해야 합니다!
 
 ```python
     # 9. Claude Code 표준 5-Layer Prompt Assembler 구성
@@ -436,7 +437,7 @@ FastAPI 서버(`http://localhost:8000`)와 Chainlit(`http://localhost:8080`)을 
    ```
 2. **동작 확인**:
    - 에이전트가 `memory(action="add", target="user", content="Identity: 5-year AI Software Engineer specializing in Python and LangGraph")` 도구를 호출하는지 확인.
-   - `artifacts/users/default/memory/USER.md` 파일에 해당 내용이 `§` 구분자로 즉시 추가되었는지 확인.
+   - `artifacts/users/user/memory/USER.md` 파일(Chainlit `user` 계정 로그인 기준, 또는 `artifacts/users/{user_id}/memory/USER.md`)에 해당 내용이 `§` 구분자로 즉시 추가되었는지 확인.
 3. **후속 질문**:
    ```text
    내가 주로 어떤 언어와 프레임워크를 다룬다고 했지?
