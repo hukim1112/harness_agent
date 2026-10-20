@@ -101,9 +101,15 @@ from app.middleware.prompt import (
 ---
 
 ### 2단계: L3 Semantic Store & L2 Episodic Store 초기화
-`create_agent_executor()` 내부의 **`# 4. 도구 바인딩` 블록과 `# 5. 미들웨어 파이프라인` 블록 사이**에 [`configs/memory.config`](configs/memory.config)를 읽어 L3 및 L2 스토어를 초기화하는 코드를 추가합니다.
-> 💡 2~4단계에서 작성하는 블록(`# 4-1` ~ `# 4-5`)은 모두 이 위치(`# 4`와 `# 5` 사이)에 순서대로 추가합니다.
 
+#### ① 메모리 설정 파일 확인 — `configs/memory.config` (수정 불필요)
+
+> [!IMPORTANT]
+> 아래 JSON은 **`agent.py`에 붙여 넣는 코드가 아닙니다!**
+> 프로젝트 루트의 설정 파일 [`configs/memory.config`](../configs/memory.config)에 **이미 들어 있는 내용**이며, 에이전트 코드는 이 파일을 읽어서(`_load_config`) 사용합니다.
+> 기본값 그대로 실습하면 되므로 **이 파일은 열어서 내용만 확인**하세요.
+
+📄 **파일 위치: `configs/memory.config`** (JSON 설정 파일)
 ```json
 {
   "semantic_memory": { "enabled": true, "memory_dir": "./artifacts/users/default/memory", "auto_review": true },
@@ -118,6 +124,12 @@ from app.middleware.prompt import (
 | `episodic_memory.top_k_prefetch` | 매 턴 Layer 4에 자동 주입할 과거 세션 요약 개수 (`0`이면 자동 주입 끔, `session_recall` 도구는 그대로 사용 가능) |
 | `enabled` / `auto_review` / `auto_finalize` | 인출·학습 ON/OFF — 서버가 요청마다 `AgentContext` 플래그로 전달 |
 
+#### ② `agent.py`에 스토어 초기화 코드 추가
+
+이제 `app/agents/main_agent/agent.py`를 열고, `create_agent_executor()` 내부의 **`# 4. 도구 바인딩` 블록과 `# 5. 미들웨어 파이프라인` 블록 사이**에 위 설정 파일을 읽어 L3 및 L2 스토어를 초기화하는 코드를 추가합니다.
+> 💡 2~4단계에서 작성하는 블록(`# 4-1` ~ `# 4-5`)은 모두 이 위치(`# 4`와 `# 5` 사이)에 순서대로 추가합니다.
+
+📄 **파일 위치: `app/agents/main_agent/agent.py`** (Python 코드)
 ```python
     # 4-1. 메모리 설정 로드 (configs/memory.config)
     memory_cfg = _load_config("./configs/memory.config", {})
