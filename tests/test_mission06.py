@@ -55,7 +55,7 @@ async def run_mission06_test():
     from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
     from langchain.agents import create_agent
     from app.utils import init_chat_model, normalize_content
-    from app.utils.context import AgentContext
+    from app.context import AgentContext
 
     model_name = "gemini-3.8-flash"
     safety_guard = InputSafetyGuardrail(model=model_name, fail_mode="open")

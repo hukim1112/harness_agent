@@ -58,7 +58,7 @@ async def run_final_test():
     print()
 
     from app.utils import init_chat_model, normalize_content
-    from app.utils.context import AgentContext
+    from app.context import AgentContext
     from langchain.agents import create_agent
 
     # 매 실행마다 고유한 세션 ID 및 격리된 테스트 사용자 ID 부여 (재실행 시 체크포인터/메모리 간섭 방지)

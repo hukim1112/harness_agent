@@ -49,7 +49,7 @@ from app.utils.database import (
     register_subagent_thread,
     get_shared_checkpointer, close_shared_checkpointer,
 )
-from app.utils.context import AgentContext
+from app.context import AgentContext
 from app.tools.plan import plan_session_scope
 from app.utils.workspace import resolve_session_workspace
 
@@ -72,13 +72,11 @@ def load_config(file_path: str, default: dict) -> dict:
 
 def _create_agent_context(
     session_id: Optional[str] = None,
-    response_mode: str = "chat",
     agent_name: str = "",
     user_id: Optional[str] = None,
     parent_thread_id: Optional[str] = None,
     force_disable_hitl: bool = False,
 ) -> AgentContext:
-    logging_cfg = load_config("./configs/logging.config", {"logging_enabled": False, "log_path": "./artifacts/agent_audit_trail.json"})
     hitl_cfg = load_config("./configs/hitl.config", {"hitl_enabled": False})
     memory_cfg = load_config("./configs/memory.config", {})
     sem_cfg = memory_cfg.get("semantic_memory", {})
@@ -105,15 +103,10 @@ def _create_agent_context(
         parent_session_id=resolved_parent_tid,
         user_id=resolved_user_id,
         workspace_dir=ws.rel_root,
-        response_mode=response_mode,
-        debug_mode=os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true",
-        logging_enabled=logging_cfg.get("logging_enabled", False),
-        log_path=logging_cfg.get("log_path", "./artifacts/agent_audit_trail.json"),
         hitl_enabled=hitl_enabled,
         semantic_memory_enabled=sem_enabled,
-        episodic_memory_enabled=epi_enabled,
-        memory_learning_enabled=sem_learning or epi_learning,
         semantic_learning_enabled=sem_learning,
+        episodic_memory_enabled=epi_enabled,
         episodic_learning_enabled=epi_learning,
     )
 
@@ -131,7 +124,6 @@ async def _resolve_run(
 
     context_obj = _create_agent_context(
         session_id=thread_id,
-        response_mode="chat",
         agent_name=agent_name,
         user_id=user_id,
         parent_thread_id=parent_thread_id,

@@ -22,7 +22,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 
 from app.utils import init_chat_model
-from app.utils.context import AgentContext
+from app.context import AgentContext
 from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
 from app.middleware.observability import AgentLogTracer
 from app.middleware.error_control.self_recovery import (
