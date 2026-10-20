@@ -67,7 +67,14 @@ async def create_agent_executor(checkpointer=None):
         checkpointer = AsyncSqliteSaver(conn)
         await checkpointer.setup()
 
-    # 4. 미들웨어 파이프라인
+    # 4. 도구 바인딩
+    #    - Mission 02: list(tools_supervisor)
+    #    - Mission 03: list(tools_supervisor) + [roll_dice, convert_currency]
+    #      (※ memory, session_recall 도구는 MemoryMiddleware가 create_agent에 자동 등록)
+    #    ※ PromptAssembler(tool_schemas=active_tools)에서 참조하므로 미들웨어보다 먼저 선언합니다.
+    active_tools = []
+
+    # 5. 미들웨어 파이프라인
     #    - Mission 02: Self-Recovery 3종 (ModelFallback, ToolErrorHandler, ModelCallLimit)
     #    - Mission 03: MemoryMiddleware, PromptAssemblerMiddleware
     #    - Mission 05: HumanInTheLoopMiddleware (configs/hitl.config)
@@ -76,12 +83,6 @@ async def create_agent_executor(checkpointer=None):
     #    ※ 전체 순서는 missions/MIDDLEWARE_PIPELINE_REFERENCE.md 참고:
     #       [1.Logging] -> [2.Guardrails] -> [3.Memory & Prompt] -> [4.HITL] -> [5.Self-Recovery]
     middleware = []
-
-    # 5. 도구 바인딩
-    #    - Mission 02: list(tools_supervisor)
-    #    - Mission 03: list(tools_supervisor) + [roll_dice, convert_currency]
-    #      (※ memory, session_recall 도구는 MemoryMiddleware가 create_agent에 자동 등록)
-    active_tools = []
 
     # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
     #    (※ Mission 03부터는 PromptAssemblerMiddleware가 프롬프트를 주입하므로 system_prompt 인자를 제거합니다)

@@ -63,7 +63,7 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `A
        ModelCallLimitMiddleware,
    )
    ```
-2. `create_agent_executor` 함수 내부의 `middleware` 리스트를 구성합니다:
+2. `create_agent_executor` 함수 내부의 **`# 5. 미들웨어 파이프라인`** 구간(`middleware = []`)을 아래와 같이 구성합니다:
    ```python
    backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
    middleware = [
@@ -101,7 +101,7 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `A
    ```python
    from .tools import tools_supervisor
    ```
-2. `active_tools` 변수에 바인딩합니다:
+2. **`# 4. 도구 바인딩`** 구간의 `active_tools` 변수에 바인딩합니다:
    ```python
    active_tools = list(tools_supervisor)
    ```
@@ -169,6 +169,10 @@ async def create_agent_executor(checkpointer=None):
         checkpointer = AsyncSqliteSaver(conn)
         await checkpointer.setup()
 
+    # 4. 도구 바인딩
+    active_tools = list(tools_supervisor)
+
+    # 5. 미들웨어 파이프라인
     backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
     middleware = [
         ModelFallbackMiddleware(
@@ -179,8 +183,6 @@ async def create_agent_executor(checkpointer=None):
         ToolErrorHandlerMiddleware(max_retries=0),
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
     ]
-
-    active_tools = list(tools_supervisor)
 
     main_agent = create_agent(
         model=llm,
