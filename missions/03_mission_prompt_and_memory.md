@@ -101,7 +101,8 @@ from app.middleware.prompt import (
 ---
 
 ### 2단계: L3 Semantic Store & L2 Episodic Store 초기화
-`create_agent_executor()` 내부에서 체크포인터(L1) 생성 코드 바로 아래에 [`configs/memory.config`](configs/memory.config)를 읽어 L3 및 L2 스토어를 초기화합니다:
+`create_agent_executor()` 내부의 **`# 4. 도구 바인딩` 블록과 `# 5. 미들웨어 파이프라인` 블록 사이**에 [`configs/memory.config`](configs/memory.config)를 읽어 L3 및 L2 스토어를 초기화하는 코드를 추가합니다.
+> 💡 2~4단계에서 작성하는 블록(`# 4-1` ~ `# 4-5`)은 모두 이 위치(`# 4`와 `# 5` 사이)에 순서대로 추가합니다.
 
 ```json
 {
@@ -118,12 +119,12 @@ from app.middleware.prompt import (
 | `enabled` / `auto_review` / `auto_finalize` | 인출·학습 ON/OFF — 서버가 요청마다 `AgentContext` 플래그로 전달 |
 
 ```python
-    # 4. 메모리 설정 로드 (configs/memory.config)
+    # 4-1. 메모리 설정 로드 (configs/memory.config)
     memory_cfg = _load_config("./configs/memory.config", {})
     sem_cfg = memory_cfg.get("semantic_memory", {})
     epi_cfg = memory_cfg.get("episodic_memory", {})
 
-    # 5. L3 Semantic Memory Store 초기화 (USER.md, MEMORY.md)
+    # 4-2. L3 Semantic Memory Store 초기화 (USER.md, MEMORY.md)
     memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
     os.makedirs(memory_dir, exist_ok=True)
     semantic_store = SemanticMemoryStore(
@@ -133,7 +134,7 @@ from app.middleware.prompt import (
     )
     semantic_store.load_from_disk()
 
-    # 6. L2 Episodic Memory Store 초기화 (과거 세션 대화 + SQLite FTS5 인덱싱)
+    # 4-3. L2 Episodic Memory Store 초기화 (과거 세션 대화 + SQLite FTS5 인덱싱)
     episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
     os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
     episodic_store = EpisodicStore(db_path=episodic_db_path)
@@ -149,15 +150,19 @@ from app.middleware.prompt import (
 > `MemoryMiddleware`는 내부에 `self.tools = [memory, session_recall]`을 보유하고 있습니다. 따라서 `active_tools`에 메모리 도구를 수동으로 추가하지 않아도, `create_agent(..., middleware=[memory_mw, ...])` 호출 시 LangChain이 미들웨어의 `.tools`를 자동으로 수집하여 에이전트 도구 노드(`ToolNode`) 및 `PromptAssembler`의 `request.tools`(Layer 2.1)에 통합 등록합니다!
 
 ```python
-    # 7. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 훅)
+    # 4-4. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 훅)
     memory_mw = MemoryMiddleware(
         semantic_store=semantic_store,
         episodic_store=episodic_store,
         review_llm=llm,
         top_k=epi_cfg.get("top_k_prefetch", 2),
     )
+```
 
-    # 8. 도구 바인딩 (Supervisor 15종 + Custom 2종 = 17종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 19종)
+그리고 Mission 02에서 작성한 **기존 `# 4. 도구 바인딩` 줄을 아래와 같이 수정**합니다. (`active_tools`를 새로 한 번 더 선언하지 말고, 기존 줄에 커스텀 도구 2종만 추가합니다.)
+
+```python
+    # 4. 도구 바인딩 (Supervisor 15종 + Custom 2종 = 17종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 19종)
     active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
 ```
 
@@ -165,10 +170,10 @@ from app.middleware.prompt import (
 
 ### 4단계: Claude Code 5-Layer Prompt Assembler 조립
 스킬 카탈로그 빌더와 5계층 프롬프트 조립기를 구성하고, LangChain AgentMiddleware로 래핑합니다.
-> ⚠️ **변수 선언 순서 주의**: `PromptAssembler(tool_schemas=active_tools, ...)`에서 `active_tools` 변수를 인자로 전달하므로, **`active_tools` 선언이 반드시 `PromptAssembler` 생성보다 위쪽에 위치**해야 합니다!
+> ⚠️ **변수 선언 순서 주의**: `PromptAssembler(tool_schemas=active_tools, ...)`에서 `active_tools` 변수를 인자로 전달하므로, **`active_tools` 선언(`# 4. 도구 바인딩`)이 반드시 `PromptAssembler` 생성(`# 4-5`)보다 위쪽에 위치**해야 합니다! 스타터 코드는 이미 이 순서로 배치되어 있습니다.
 
 ```python
-    # 9. Claude Code 표준 5-Layer Prompt Assembler 구성
+    # 4-5. Claude Code 표준 5-Layer Prompt Assembler 구성
     #    - 스킬: 에이전트 내장 skills/ 폴더만 스캔 (SKILLS_DIR = app/agents/main_agent/skills)
     #    - skills/SKILL.md(스킬 실행 지침)는 Layer 2.2 카탈로그 상단에만 주입
     skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
@@ -192,7 +197,7 @@ from app.middleware.prompt import (
 > ⚠️ **순서 주의**: `memory_mw`가 `prompt_mw`보다 바깥(앞)에 위치해야 꺼진 메모리 도구가 먼저 필터링되어 Layer 2.1 도구 스키마에 반영됩니다. (메모리 인출 자체는 `before_agent` 훅에서 수행되어 Layer 4에 주입됩니다.)
 > `middleware = []` 바로 아래(Mission 02에서 작성한 `# (5) Self-Recovery` 위쪽)에 아래 **`(3) Memory & Prompt`** 블록을 추가합니다:
 ```python
-    # 10. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
+    # 5. 미들웨어 파이프라인 (보안 & 거버넌스 순서)
     middleware = []
 
     # (3) Memory & Prompt — 메모리 도구 필터링 → 5계층 프롬프트 조립
@@ -217,7 +222,7 @@ from app.middleware.prompt import (
 `create_agent` 호출 시 `system_prompt` 인자를 제거하고(PromptAssemblerMiddleware가 런타임에 주입), 테스트 검증용 참조 속성들을 보존합니다:
 
 ```python
-    # 11. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
+    # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
     main_agent = create_agent(
         model=llm,
         tools=active_tools,
@@ -308,10 +313,15 @@ async def create_agent_executor(checkpointer=None):
         checkpointer = AsyncSqliteSaver(conn)
         await checkpointer.setup()
 
+    # 4. 도구 바인딩
+    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
+
+    # 4-1. 메모리 설정 로드
     memory_cfg = _load_config("./configs/memory.config", {})
     sem_cfg = memory_cfg.get("semantic_memory", {})
     epi_cfg = memory_cfg.get("episodic_memory", {})
 
+    # 4-2. L3 Semantic Memory Store
     memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
     os.makedirs(memory_dir, exist_ok=True)
     semantic_store = SemanticMemoryStore(
@@ -321,19 +331,21 @@ async def create_agent_executor(checkpointer=None):
     )
     semantic_store.load_from_disk()
 
+    # 4-3. L2 Episodic Memory Store
     episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
     os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
     episodic_store = EpisodicStore(db_path=episodic_db_path)
     await episodic_store.setup()
 
+    # 4-4. MemoryMiddleware
     memory_mw = MemoryMiddleware(
         semantic_store=semantic_store,
         episodic_store=episodic_store,
         review_llm=llm,
         top_k=epi_cfg.get("top_k_prefetch", 2),
     )
-    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
 
+    # 4-5. 5-Layer Prompt Assembler
     skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
     skill_builder = SkillPromptBuilder(
         skills_dirs=[str(SKILLS_DIR)],
@@ -348,7 +360,7 @@ async def create_agent_executor(checkpointer=None):
     )
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 
-    # 10. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
+    # 5. 미들웨어 파이프라인 (보안 & 거버넌스 순서)
     middleware = []
 
     # (3) Memory & Prompt — 메모리 도구 필터링 → 5계층 프롬프트 조립
@@ -366,6 +378,7 @@ async def create_agent_executor(checkpointer=None):
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
     ])
 
+    # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
     main_agent = create_agent(
         model=llm,
         tools=active_tools,

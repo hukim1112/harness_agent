@@ -12,7 +12,7 @@ Claude Code 표준 5계층 프롬프트 조립기 (Prompt Caching & Memory Archi
 - ⚡ __SYSTEM_PROMPT_DYNAMIC_BOUNDARY__ (Cache Control 마킹 지점)
 
 [DYNAMIC SUFFIX: 매 턴/세션 가변 영역 ⚡]
-- Layer 3: Dynamic Session Context (CWD, OS, Session ID, User Permission, Git Branch)
+- Layer 3: Dynamic Session Context (CWD, OS, Session ID, User ID, Session Workspace Paths)
 - Layer 4: Memory & Dynamic Documents (recalled_memory, MEMORY.md, USER.md, MCP.md 등)
 - Layer 5: User & Local Project Rules (CLAUDE.md, AGENT.md, CONVENTIONS.md)
 
