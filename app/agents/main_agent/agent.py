@@ -122,12 +122,16 @@ async def create_agent_executor(checkpointer=None):
         checkpointer = AsyncSqliteSaver(conn)
         await checkpointer.setup()
 
-    # 4. 메모리 설정 로드 (configs/memory.config)
+    # 4. 도구 바인딩 (Supervisor 15종 + Custom 2종 = 17종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 19종)
+    #    ※ PromptAssembler(tool_schemas=active_tools)에서 참조하므로 먼저 선언합니다.
+    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
+
+    # 4-1. 메모리 설정 로드 (configs/memory.config)
     memory_cfg = _load_config("./configs/memory.config", {})
     sem_cfg = memory_cfg.get("semantic_memory", {})
     epi_cfg = memory_cfg.get("episodic_memory", {})
 
-    # 5. L3 Semantic Memory Store 초기화 (USER.md, MEMORY.md)
+    # 4-2. L3 Semantic Memory Store 초기화 (USER.md, MEMORY.md)
     #    기본값 artifacts/users/default/memory → 사용자별 artifacts/users/{user_id}/memory/ 자동 격리
     memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
     os.makedirs(memory_dir, exist_ok=True)
@@ -138,13 +142,13 @@ async def create_agent_executor(checkpointer=None):
     )
     semantic_store.load_from_disk()
 
-    # 6. L2 Episodic Memory Store 초기화 (과거 세션 대화 + SQLite FTS5 인덱싱)
+    # 4-3. L2 Episodic Memory Store 초기화 (과거 세션 대화 + SQLite FTS5 인덱싱)
     episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
     os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
     episodic_store = EpisodicStore(db_path=episodic_db_path)
     await episodic_store.setup()
 
-    # 7. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 훅)
+    # 4-4. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 훅)
     memory_mw = MemoryMiddleware(
         semantic_store=semantic_store,
         episodic_store=episodic_store,
@@ -152,10 +156,7 @@ async def create_agent_executor(checkpointer=None):
         top_k=epi_cfg.get("top_k_prefetch", 2),
     )
 
-    # 8. 도구 바인딩 (Supervisor 15종 + Custom 2종 = 17종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 19종)
-    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
-
-    # 9. Claude Code 표준 5-Layer Prompt Assembler 구성
+    # 4-5. Claude Code 표준 5-Layer Prompt Assembler 구성
     #    - 스킬: 에이전트 내장 skills/ 만 스캔 (Mission 04 금융 스킬도 이 폴더에 설치)
     #    - skills/SKILL.md(스킬 실행 지침)는 Layer 2.2 카탈로그 상단에만 주입 (L5 중복 주입 안 함)
     skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
@@ -173,7 +174,7 @@ async def create_agent_executor(checkpointer=None):
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 
     # ─────────────────────────────────────────────────────────────────
-    # 10. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
+    # 5. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
     #
     # 미들웨어는 리스트 순서대로 요청을 감싸는 러시안 인형 구조입니다.
     # 리스트 앞쪽 = 바깥 껍데기(먼저 실행), 뒤쪽 = LLM에 가까운 내부.
@@ -232,7 +233,7 @@ async def create_agent_executor(checkpointer=None):
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
     ])
 
-    # 11. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
+    # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
     main_agent = create_agent(
         model=llm,
         tools=active_tools,

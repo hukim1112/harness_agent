@@ -61,9 +61,9 @@
    from langchain.agents.middleware import HumanInTheLoopMiddleware
    ```
 
-2. `create_agent_executor()` 내부의 **10번 미들웨어 파이프라인 구간**에서 `(3) Memory & Prompt`와 `(5) Self-Recovery` 사이에 **`(4) Human-in-the-Loop`** 블록을 추가합니다:
+2. `create_agent_executor()` 내부의 **`# 5. 미들웨어 파이프라인` 구간**에서 `(3) Memory & Prompt`와 `(5) Self-Recovery` 사이에 **`(4) Human-in-the-Loop`** 블록을 추가합니다:
    ```python
-   # 10. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
+   # 5. 미들웨어 파이프라인 (보안 & 거버넌스 순서)
    middleware = []
 
    # (3) Memory & Prompt — 메모리 도구 필터링 → 5계층 프롬프트 조립
