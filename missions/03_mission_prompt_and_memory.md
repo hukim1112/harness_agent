@@ -51,7 +51,7 @@ graph TD
   * **`__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__`**: GPU KV-Cache 경계선. 이 경계선 이전의 L1, L2는 매 턴, 매 세션마다 **바이트 단위로 100% 동일**하게 유지되어 **비용 90% 절감 및 지연 시간 대폭 단축**을 달성합니다.
 * **[Dynamic Suffix: 매 턴/세션 가변 영역 ⚡]**
   * **Layer 3 (Dynamic Session Context)**: 현재 날짜(`Current Date`), 작업 디렉토리(`CWD`), 세션 ID, 호스트 OS, 사용자 권한.
-  * **Layer 4 (Memory & Dynamic Documents)**: `MemoryMiddleware`가 주입한 Frozen Semantic Memory(`USER.md`, `MEMORY.md`) 및 과거 세션 요약 힌트.
+  * **Layer 4 (Memory)**: `MemoryMiddleware`가 주입한 Frozen Semantic Memory(`USER.md`, `MEMORY.md`) 및 과거 세션 요약 힌트.
   * **Layer 5 (User & Local Project Rules)**: 로컬 프로젝트 코딩 컨벤션 및 안전 가이드(`AGENT.md`).
 
 ---
@@ -61,22 +61,26 @@ graph TD
 
 | 계층 | 기억 종류 | 저장 매체 | 수명 (Lifecycle) | 주요 역할 |
 | :--- | :--- | :--- | :--- | :--- |
-| **L1** | 단기 기억 (Short-term) | `AsyncSqliteSaver` (Checkpointer) | 현재 세션/대화 스레드 | 현재 진행 중인 대화 턴의 문맥 유지 |
-| **L2** | 에피소드 기억 (Episodic) | `EpisodicStore` (SQLite FTS5) | 영구 보관 (세션 간) | 과거 대화 이력 인덱싱, 유사 작업 검색 및 2-Stage JIT 회상 |
+| **L1** | 단기 기억 (Working) | `AsyncSqliteSaver` (Checkpointer) | 현재 세션/대화 스레드 | 모델 입력용 컨텍스트 유지 (`AutoCompactor`가 `before_model`에서 요약본으로 압축 교체) |
+| **L2 (원문)** | 에피소드 원문 (Transcript) | `TranscriptStore` (`transcript.db`) | 영구 보관 (Append-only) | 사용자 질문·AI 응답·도구 호출(`tool_calls`)·도구 결과를 실시간 무손실 백업 |
+| **L2 (색인)** | 에피소드 색인 (Episodic Index) | `EpisodicStore` (`episodic.db` FTS5) | 영구 보관 (세션 간) | 다중 주제(Multi-topic) 요약·키워드·사용 도구 색인 및 2-Stage JIT 회상 |
 | **L3** | 시맨틱 기억 (Semantic) | `USER.md` / `MEMORY.md` (`§` 분리) | 영구 보관 (파일 기반) | 사용자 성향, 환경 팩트, 프로젝트 컨벤션 영구 기록 |
 
 ---
 
-### 3. 세션 종료 인덱싱 (`finalize_session`) & 2-Stage JIT 회상
-과거 대화 전체를 시스템 프롬프트에 다 넣으면 토큰이 폭발하고 캐시가 깨집니다. 따라서 **2단계 JIT(Just-In-Time) 회상 패턴**을 적용합니다:
+### 3. 세션 데이터 이원화 & 유휴 지연 인덱싱 (`IdleReviewQueue`) & 2-Stage JIT 회상
+과거 대화 전체를 시스템 프롬프트에 다 넣으면 토큰이 폭발하고 캐시가 깨지며, 반대로 Compaction이 `state["messages"]`를 요약본으로 덮어쓰면 원문이 사라집니다. 따라서 **세션 데이터 이원화(`transcript.db` + `episodic.db`)**와 **2단계 JIT(Just-In-Time) 회상 패턴**을 적용합니다:
 
-1. **세션 종료 시 인덱싱 (`finalize_session`)**:
-   - `after_agent` 훅에서 백그라운드 비동기 데몬(`daemon=True`)으로 실행되어 사용자 응답에는 **0ms 지연**을 줍니다.
-   - [1단계: 로컬 단어 추출 (원문 단어 손실 0%)] + [2단계: LLM 핵심 요약 및 한/영 키워드 추출]을 거쳐 SQLite FTS5에 색인합니다.
-2. **1단계 검색 (Search)**:
-   - 새 세션에서 유저 질문 인입 시 `MemoryMiddleware.before_agent()`가 질문 키워드로 과거 세션을 검색하여 **L4 프롬프트에 1~2줄 요약 힌트만 주입**합니다.
-3. **2단계 상세 회상 (Recall)**:
-   - 에이전트는 L4의 요약 힌트를 보고, 대화 원문이 꼭 필요한 경우에만 자율적으로 `session_recall(session_id, anchor_message)` 도구를 호출하여 해당 맥락의 대화 원문 슬라이스를 읽어옵니다.
+1. **실시간 원문 백업 (`TranscriptStore` — `transcript.db`)**:
+   - `MemoryMiddleware`가 `before_agent`(사용자 질문), `wrap_model_call`(AI 응답 및 도구 호출 인자), `wrap_tool_call`(도구 실행 결과) 시점마다 `transcript.db`에 멱등(Append-only) 기록합니다.
+   - `AutoCompactor`가 `before_model`에서 모델 컨텍스트(`state["messages"]`)를 압축 교체하더라도 `transcript.db`의 원문과 도구 기록은 100% 보존됩니다.
+2. **유휴 지연 요약 인덱싱 (`IdleReviewQueue` + `finalize_session`)**:
+   - 매 턴 종료 즉시 무거운 LLM 요약을 실행하는 대신, `IdleReviewQueue`에 예약하여 **마지막 턴 종료 후 15초 동안 추가 입력이 없거나(유휴), 연속 대화 시 최초 예약 후 30분이 경과했을 때** 백그라운드 스레드에서 실행합니다 (사용자 복귀 시 대기 중인 리뷰는 즉시 취소).
+   - `transcript.db`의 전체 원문을 읽어 [1단계: 로컬 단어 추출] + [2단계: LLM 다중 주제(Topics) 요약 및 한/영 키워드 추출]을 거쳐 `episodic.db`(FTS5)에 색인합니다.
+3. **1단계 검색 (Search)**:
+   - 새 세션에서 유저 질문 인입 시 `MemoryMiddleware.before_agent()`가 질문 키워드로 `episodic.db`를 검색하여 **L4 프롬프트에 요약·주제·도구 힌트만 주입**합니다.
+4. **2단계 상세 회상 (Recall)**:
+   - 에이전트는 L4의 요약 힌트를 보고, 대화 원문이 꼭 필요한 경우에만 자율적으로 `session_recall(session_id, anchor_message)` 도구를 호출하여 `transcript.db`에서 해당 맥락의 대화·도구 원문 슬라이스를 읽어옵니다.
 
 ---
 
@@ -112,16 +116,19 @@ from app.middleware.prompt import (
 📄 **파일 위치: `configs/memory.config`** (JSON 설정 파일)
 ```json
 {
+  "transcript": { "enabled": true, "db_path": "./app/database/transcript.db", "recall_max_chars": 2000 },
   "semantic_memory": { "enabled": true, "memory_dir": "./artifacts/users/default/memory", "auto_review": true },
-  "episodic_memory": { "enabled": true, "db_path": "./app/database/episodic.db", "top_k_prefetch": 2, "auto_finalize": true }
+  "episodic_memory": { "enabled": true, "db_path": "./app/database/episodic.db", "top_k_prefetch": 2, "auto_finalize": true, "finalize_idle_settle_s": 15, "finalize_max_age_s": 1800 }
 }
 ```
 
 | 키 | 의미 |
 | :--- | :--- |
+| `transcript.enabled` / `db_path` | 대화 원문(질문·답변·도구 호출·결과) 실시간 Append-only 백업 DB (`episodic_memory` 스위치와 독립 동작) |
 | `semantic_memory.memory_dir` | `USER.md` / `MEMORY.md` 위치. 기본값이면 사용자별로 `artifacts/users/{user_id}/memory/`에 자동 격리 (다른 경로 지정 시 `{memory_dir}/users/{user_id}/memory/`) |
-| `episodic_memory.db_path` | 과거 세션 요약 + FTS5 인덱스 DB (`user_id` 컬럼으로 사용자 격리) |
+| `episodic_memory.db_path` | 과거 세션 다중 주제 요약 + FTS5 인덱스 DB (`user_id` 컬럼으로 사용자 격리) |
 | `episodic_memory.top_k_prefetch` | 매 턴 Layer 4에 자동 주입할 과거 세션 요약 개수 (`0`이면 자동 주입 끔, `session_recall` 도구는 그대로 사용 가능) |
+| `finalize_idle_settle_s` / `finalize_max_age_s` | 유휴 지연 요약 대기 시간(기본 15초) 및 연속 대화 시 최대 요약 보류 시간(기본 1800초=30분) |
 | `enabled` / `auto_review` / `auto_finalize` | 인출·학습 ON/OFF — 서버가 요청마다 `AgentContext` 플래그로 전달 |
 
 #### ② `agent.py`에 스토어 초기화 코드 추가
@@ -198,7 +205,6 @@ from app.middleware.prompt import (
         system_rules=SUPERVISOR_SYSTEM_PROMPT,
         tool_schemas=active_tools,
         skill_catalog=skill_builder.assemble,
-        l4_docs={},
     )
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 ```
@@ -368,7 +374,6 @@ async def create_agent_executor(checkpointer=None):
         system_rules=SUPERVISOR_SYSTEM_PROMPT,
         tool_schemas=active_tools,
         skill_catalog=skill_builder.assemble,
-        l4_docs={},
     )
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 
@@ -449,7 +454,7 @@ Session Information:
 - Working Directory (CWD): /workspace
 - Session ID: current_session_123
 
-=== Layer 4: Memory & Dynamic Documents ===
+=== Layer 4: Memory ===
 [Recalled Memory (injected by MemoryMiddleware)]:
 • [Semantic Profile]: - **Identity**: Cheolsu Kim (AI Software Engineer)
 • [Episodic Hint]: 과거 세션(session_test_arch)에서 Qdrant/FastAPI 아키텍처 논의 완료

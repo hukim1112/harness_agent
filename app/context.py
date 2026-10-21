@@ -23,3 +23,11 @@ class AgentContext:
     semantic_learning_enabled: bool = True
     episodic_memory_enabled: bool = True
     episodic_learning_enabled: bool = True
+    transcript_enabled: bool = True
+
+    # ── 노트북(03_hermes_memory_architecture.ipynb) 하위 호환 필드 ──
+    logging_enabled: bool = False
+    auto_recall_episodic: bool = False
+    memory_learning_enabled: bool = True
+    memory_dir: str = ""
+    episodic_db_path: str = ""

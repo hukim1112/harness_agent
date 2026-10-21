@@ -40,6 +40,8 @@ from .prompt.prompt_assembler import PromptAssembler, create_prompt_assembler_mi
 # --- Memory (Tier 2) ---
 from .memory.semantic_store import SemanticMemoryStore
 from .memory.episodic_store import EpisodicStore
+from .memory.transcript_store import TranscriptStore
+from .memory.review_queue import IdleReviewQueue
 from .memory.memory_middleware import MemoryMiddleware
 
 # --- Guardrails (Tier 2) ---
@@ -75,6 +77,8 @@ __all__ = [
     # Memory
     "SemanticMemoryStore",
     "EpisodicStore",
+    "TranscriptStore",
+    "IdleReviewQueue",
     "MemoryMiddleware",
     # Guardrails
     "InputSafetyGuardrail",

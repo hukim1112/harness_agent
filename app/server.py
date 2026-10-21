@@ -81,6 +81,7 @@ def _create_agent_context(
     memory_cfg = load_config("./configs/memory.config", {})
     sem_cfg = memory_cfg.get("semantic_memory", {})
     epi_cfg = memory_cfg.get("episodic_memory", {})
+    tr_cfg = memory_cfg.get("transcript", {})
 
     resolved_user_id = (user_id or "default").strip() or "default"
     resolved_parent_tid = (parent_thread_id or "").strip()
@@ -96,6 +97,7 @@ def _create_agent_context(
     epi_enabled = epi_cfg.get("enabled", True)
     sem_learning = sem_cfg.get("auto_review", True)
     epi_learning = epi_cfg.get("auto_finalize", True)
+    tr_enabled = tr_cfg.get("enabled", True)
 
     return AgentContext(
         agent_name=agent_name,
@@ -108,6 +110,7 @@ def _create_agent_context(
         semantic_learning_enabled=sem_learning,
         episodic_memory_enabled=epi_enabled,
         episodic_learning_enabled=epi_learning,
+        transcript_enabled=tr_enabled,
     )
 
 
@@ -239,6 +242,17 @@ async def lifespan(app: FastAPI):
     await close_shared_checkpointer()
     for name, agent in list(app.state.agents.items()):
         try:
+            mem_mw = getattr(agent, "memory_middleware", None)
+            if mem_mw is not None and hasattr(mem_mw, "wait_for_reviews"):
+                await asyncio.to_thread(mem_mw.wait_for_reviews, 5.0)
+                if hasattr(mem_mw, "_review_queue"):
+                    mem_mw._review_queue.shutdown()
+            epi_store = getattr(agent, "episodic_store", None)
+            if epi_store is not None and hasattr(epi_store, "close"):
+                await epi_store.close()
+            tr_store = getattr(agent, "transcript_store", None)
+            if tr_store is not None and hasattr(tr_store, "close"):
+                await tr_store.close()
             checkpointer = getattr(agent, "checkpointer", None)
             if checkpointer:
                 conn = getattr(checkpointer, "conn", None)

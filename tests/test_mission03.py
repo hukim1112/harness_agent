@@ -137,7 +137,7 @@ async def run_prompt_and_memory_test():
         ("Layer 1: System Identity & Core Role", "=== Layer 1:"),
         ("Layer 2: Capabilities (Tools & Skills)", "=== Layer 2:"),
         ("Layer 3: Dynamic Session Context", "=== Layer 3:"),
-        ("Layer 4: Memory & Dynamic Documents", "=== Layer 4:"),
+        ("Layer 4: Memory", "=== Layer 4:"),
         ("Layer 5: User & Local Project Rules", "=== Layer 5:"),
     ]
 
@@ -151,14 +151,18 @@ async def run_prompt_and_memory_test():
     agent_epi = getattr(agent, "episodic_store", None)
     if agent_epi:
         await agent_epi.close()
+    agent_tr = getattr(agent, "transcript_store", None)
+    if agent_tr:
+        await agent_tr.close()
     await epi_store.close()
-    for ext in ("", "-wal", "-shm"):
-        p = test_epi_path + ext
-        if os.path.exists(p):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
+    for base in (test_epi_path, os.path.join(test_epi_dir, "test_episodic_verify_transcript.db")):
+        for ext in ("", "-wal", "-shm"):
+            p = base + ext
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
     print("\n🎉 [Mission 03] 모든 하네스(프롬프트 조립 + 계층형 메모리) 검증 100% 통과!")
     return True
@@ -174,13 +178,14 @@ if __name__ == "__main__":
     except Exception:
         traceback.print_exc()
     finally:
-        for ext in ("", "-wal", "-shm"):
-            p = os.path.join(project_root, "app", "database", "test_episodic_verify.db" + ext)
-            if os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
+        for stem in ("test_episodic_verify.db", "test_episodic_verify_transcript.db"):
+            for ext in ("", "-wal", "-shm"):
+                p = os.path.join(project_root, "app", "database", stem + ext)
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(0 if success else 1)
