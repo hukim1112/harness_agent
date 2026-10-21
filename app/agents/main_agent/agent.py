@@ -18,28 +18,31 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (In
    - L3 Dynamic Session Context ← CWD, Session ID, Session Workspace Root, Date, Host OS
    - L4 Recalled Memory         ← Semantic 스냅샷 + Episodic 과거 세션 요약 힌트
    - L5 Project Rules            ← AGENT.md / CLAUDE.md (현재 미지정)
-3. 계층형 메모리 (Layered Memory):
-   - L1 단기 기억  : AsyncSqliteSaver (세션별 체크포인터)
-   - L2 에피소드 기억: EpisodicStore (SQLite FTS5 + finalize_session + session_recall JIT 인출)
+3. 계층형 메모리 (Layered Memory & Dual-Tier Session Data):
+   - L1 단기 기억  : AsyncSqliteSaver (세션별 체크포인터 — AutoCompactor가 압축 교체)
+   - L2 에피소드 원문: TranscriptStore (transcript.db — 대화·도구 호출/결과 실시간 Append-only 백업)
+   - L2 에피소드 색인: EpisodicStore (episodic.db — 다중 주제 요약·키워드 SQLite FTS5 + session_recall JIT 인출)
    - L3 시맨틱 기억 : SemanticMemoryStore (USER.md / MEMORY.md + memory 도구)
-4. Self-Recovery 미들웨어 3종:
-   - ModelFallbackMiddleware    : LLM 장애 시 백업 모델로 failover
+4. Self-Recovery & Self-Correction 미들웨어:
+   - ModelFallbackMiddleware    : LLM 장애 시 백업 모델로 failover (413 토큰 초과는 상위로 전파)
    - ToolErrorHandlerMiddleware : 도구 예외 시 ToolMessage(Observation)로 변환
    - ModelCallLimitMiddleware   : 무한 루프 차단 (run_limit=50)
+   - StopHooksMiddleware        : 생성된 Python 코드블록 AST 구문 검증 및 자가 교정 루프
 5. 도구: tools_supervisor(15종) + memory_tools(2종) + custom_tools(2종) = 총 19종
 
 [미들웨어 파이프라인 실행 순서]
    사용자 요청 →
      [1] AgentLogTracer            ← 가장 바깥: 차단 포함 전체 라이프사이클 감사 로깅
-     [2] InputSafetyGuardrail      ← 프롬프트 인젝션/탈옥 시도 선제 차단
-     [3] TopicAlignmentGuardrail   ← 오프토픽 질문 차단 & 대안 안내
-     [4] MemoryMiddleware          ← 꺼진 메모리 도구 필터링 (Prompt보다 바깥이어야 L2.1에 반영)
-                                     ※ 메모리 인출은 before_agent 훅이라 위치와 무관하게 가드레일(wrap_model_call)보다 먼저 실행됨
-     [5] PromptAssemblerMiddleware ← 5계층 시스템 프롬프트 조립
-     [6] HumanInTheLoopMiddleware  ← 도구 실행 직전 사용자 승인 요청
-     [7] ModelFallbackMiddleware   ← 모델 호출 실패 시 백업 모델로 재시도
-     [8] ToolErrorHandlerMiddleware← 도구 실행 오류 시 에러 메시지로 변환
-     [9] ModelCallLimitMiddleware  ← 무한 루프 방지 (최대 호출 횟수 제한)
+     [2] InputSafetyGuardrail      ← before_agent: 프롬프트 인젝션/탈옥 시도 선제 차단 (jump_to="end")
+     [3] TopicAlignmentGuardrail   ← before_agent: 오프토픽 질문 차단 & 대안 안내 (jump_to="end")
+     [4] MemoryMiddleware          ← before_agent(원문 기록 & L2/L3 메모리 인출) + wrap_model/tool(원문 기록 & 도구 필터링) + after_agent(유휴 리뷰 예약)
+     [5] PromptAssemblerMiddleware ← wrap_model_call: 5계층 시스템 프롬프트 조립
+     [6] CompactorMiddleware       ← before_model(AutoCompactor state 교체) + wrap_model_call(Snip/Micro/Collapse + 413 Reactive)
+     [7] HumanInTheLoopMiddleware  ← 도구 실행 직전 사용자 승인 요청
+     [8] ModelFallbackMiddleware   ← 모델 호출 실패 시 백업 모델로 재시도
+     [9] ToolErrorHandlerMiddleware← 도구 실행 오류 시 에러 메시지로 변환
+    [10] ModelCallLimitMiddleware  ← 무한 루프 방지 (최대 호출 횟수 제한)
+    [11] StopHooksMiddleware       ← after_model: 코드 구문 에러 시 jump_to="model" 자가 교정
                                   → LLM 모델 호출
 """
 
@@ -61,14 +64,26 @@ from .tools import tools_supervisor
 from app.tools.custom_tools import roll_dice, convert_currency
 
 # Mission 03: 계층형 메모리 + 5계층 프롬프트 조립기
-from app.middleware.memory import SemanticMemoryStore, EpisodicStore, MemoryMiddleware
+from app.middleware.memory import (
+    SemanticMemoryStore,
+    EpisodicStore,
+    TranscriptStore,
+    MemoryMiddleware,
+)
 from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
 
-# Mission 02: Self-Recovery 미들웨어 3종
+# Mission 02: Self-Recovery & Self-Correction 미들웨어
 from app.middleware.error_control.self_recovery import (
     ModelFallbackMiddleware,
     ToolErrorHandlerMiddleware,
     ModelCallLimitMiddleware,
+)
+from app.middleware.error_control.self_correction import StopHooksMiddleware
+
+# Claude Code 5-Stage Compaction & Amnesia Guard
+from app.middleware.compaction import (
+    AmnesiaGuardMiddleware,
+    create_compactor_middleware,
 )
 
 # Mission 06: 입력 보안 & 주제 정렬 가드레일
@@ -130,6 +145,7 @@ async def create_agent_executor(checkpointer=None):
     memory_cfg = _load_config("./configs/memory.config", {})
     sem_cfg = memory_cfg.get("semantic_memory", {})
     epi_cfg = memory_cfg.get("episodic_memory", {})
+    tr_cfg = memory_cfg.get("transcript", {})
 
     # 4-2. L3 Semantic Memory Store 초기화 (USER.md, MEMORY.md)
     #    기본값 artifacts/users/default/memory → 사용자별 artifacts/users/{user_id}/memory/ 자동 격리
@@ -142,18 +158,33 @@ async def create_agent_executor(checkpointer=None):
     )
     semantic_store.load_from_disk()
 
-    # 4-3. L2 Episodic Memory Store 초기화 (과거 세션 대화 + SQLite FTS5 인덱싱)
+    # 4-3. L2 원문 저장소(TranscriptStore) + 요약 색인(EpisodicStore) 초기화
+    transcript_db_path = tr_cfg.get("db_path", os.path.join(db_dir, "transcript.db"))
+    os.makedirs(os.path.dirname(transcript_db_path) or ".", exist_ok=True)
+    transcript_store = TranscriptStore(
+        db_path=transcript_db_path,
+        recall_max_chars=int(tr_cfg.get("recall_max_chars", 2000)),
+    )
+    await transcript_store.setup()
+
     episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
     os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
-    episodic_store = EpisodicStore(db_path=episodic_db_path)
+    episodic_store = EpisodicStore(
+        db_path=episodic_db_path,
+        transcript_store=transcript_store,
+    )
     await episodic_store.setup()
 
-    # 4-4. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 훅)
+    # 4-4. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 원문 기록 + 유휴 요약 훅)
     memory_mw = MemoryMiddleware(
         semantic_store=semantic_store,
         episodic_store=episodic_store,
         review_llm=llm,
         top_k=epi_cfg.get("top_k_prefetch", 2),
+        transcript_store=transcript_store,
+        transcript_enabled=tr_cfg.get("enabled", True),
+        finalize_idle_settle_s=float(epi_cfg.get("finalize_idle_settle_s", 15.0)),
+        finalize_max_age_s=float(epi_cfg.get("finalize_max_age_s", 1800.0)),
     )
 
     # 4-5. Claude Code 표준 5-Layer Prompt Assembler 구성
@@ -211,9 +242,31 @@ async def create_agent_executor(checkpointer=None):
                 fail_mode=topic_cfg.get("fail_mode", "open"),
             ))
 
-    # (3) Memory & Prompt — 메모리 도구 필터링 → 5계층 프롬프트 조립
-    #     (메모리 인출 자체는 before_agent 훅에서 가드레일보다 먼저 1회 실행됩니다)
+    # (3) Memory & Prompt — 원문 기록·메모리 인출(before_agent, 가드레일 통과 후 실행) + 도구 필터링 → 5계층 프롬프트 조립
     middleware.extend([memory_mw, prompt_mw])
+
+    # (3-1) Context Compaction & Amnesia Guard (configs/compaction.config)
+    compaction_cfg = _load_config("./configs/compaction.config", {"compaction_enabled": False})
+    if compaction_cfg.get("compaction_enabled"):
+        ag_cfg = compaction_cfg.get("amnesia_guard", {})
+        amnesia_guard = None
+        if ag_cfg.get("enabled", True):
+            amnesia_guard = AmnesiaGuardMiddleware(
+                max_restore_files=ag_cfg.get("max_restore_files", 5),
+            )
+            middleware.append(amnesia_guard)
+        auto_cfg = compaction_cfg.get("auto", {})
+        micro_cfg = compaction_cfg.get("micro", {})
+        middleware.append(
+            create_compactor_middleware(
+                llm=llm,
+                threshold_tokens=auto_cfg.get("threshold_tokens", 8000),
+                amnesia_guard=amnesia_guard,
+                swap_dir=micro_cfg.get("swap_dir", "./artifacts/swaps"),
+                # 원문 기록이 꺼져 있으면 압축 이벤트도 transcript.db에 남기지 않음
+                transcript_store=transcript_store if tr_cfg.get("enabled", True) else None,
+            )
+        )
 
     # (4) Human-in-the-Loop — 지정 도구(roll_dice) 실행 전 사용자 승인 게이트
     hitl_cfg = _load_config("./configs/hitl.config", {"hitl_enabled": False})
@@ -221,7 +274,7 @@ async def create_agent_executor(checkpointer=None):
         interrupt_on = hitl_cfg.get("interrupt_on", {})
         middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
 
-    # (5) Self-Recovery Circuit Breakers — 모델/도구 장애 자동 복구
+    # (5) Self-Recovery & Self-Correction Circuit Breakers — 모델/도구 장애 복구 및 코드 검증
     backup_model = os.getenv("FALLBACK_MODEL_NAME", "gpt-6.1-sol")
     middleware.extend([
         ModelFallbackMiddleware(
@@ -231,6 +284,7 @@ async def create_agent_executor(checkpointer=None):
         ),
         ToolErrorHandlerMiddleware(max_retries=0),
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
+        StopHooksMiddleware(),
     ])
 
     # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
@@ -246,6 +300,7 @@ async def create_agent_executor(checkpointer=None):
     main_agent.registered_tools = active_tools
     main_agent.registered_middlewares = middleware
     main_agent.checkpointer_conn = conn
+    main_agent.transcript_store = transcript_store
     main_agent.episodic_store = episodic_store
     main_agent.semantic_store = semantic_store
     main_agent.assembler = assembler

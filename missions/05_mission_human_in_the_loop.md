@@ -190,7 +190,6 @@ async def create_agent_executor(checkpointer=None):
         system_rules=SUPERVISOR_SYSTEM_PROMPT,
         tool_schemas=active_tools,
         skill_catalog=skill_builder.assemble,
-        l4_docs={},
     )
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 

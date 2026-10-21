@@ -31,10 +31,10 @@ Mission 02~07을 거치며 `app/agents/main_agent/agent.py`에 추가되는 미�
 | 위치 | 미들웨어 | 배치 이유 |
 | :---: | :--- | :--- |
 | 1 | **AgentLogTracer** | 가장 바깥에서 감싸야 차단된 요청 포함 **전체 라이프사이클**을 로깅 |
-| 2~3 | **Guardrails** | 악의적/오프토픽 입력을 **LLM 호출 전에** 즉시 차단 |
-| 4~5 | **Memory → Prompt** | 꺼진 메모리 도구를 필터링한 뒤 5계층 프롬프트를 조립 (※ 메모리 인출은 `before_agent` 훅에서 1회 수행) |
+| 2~3 | **Guardrails** | `before_agent`(`jump_to="end"`)에서 악의적/오프토픽 입력을 **메모리 인출·프롬프트 조립·LLM 호출 전에** 즉시 차단 |
+| 4~5 | **Memory → Prompt** | 가드레일 통과 후 `before_agent`에서 원문 기록·메모리 인출 수행, `wrap_model_call`에서 꺼진 메모리 도구를 필터링한 뒤 5계층 프롬프트 조립, `after_agent`에서 유휴 지연 리뷰(`IdleReviewQueue`) 예약 |
 | 6 | **HITL** | 도구 실행 **직전**에 인터럽트하여 사용자 승인을 요청 |
-| 7~9 | **Self-Recovery** | LLM에 가장 가까운 내부에서 모델/도구 **장애 복구** 담당 |
+| 7~9 | **Self-Recovery** | LLM에 가장 가까운 내부에서 모델/도구 **장애 복구** 담당 (413 컨텍스트 초과는 상위로 재전파) |
 
 ---
 

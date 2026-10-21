@@ -66,8 +66,8 @@
 `app/agents/main_agent/agent.py`를 열고, `configs/guardrail.config`가 활성화(`guardrail_enabled: true`)되었을 때 `InputSafetyGuardrail`과 `TopicAlignmentGuardrail`을 미들웨어 파이프라인에 장착합니다.
 
 > 📌 **미들웨어 파이프라인 위치 안내** (상세 순서: [`MIDDLEWARE_PIPELINE_REFERENCE.md`](./MIDDLEWARE_PIPELINE_REFERENCE.md) 참고):  
-> 악의적인 프롬프트 인젝션이나 오프토픽 질문은 **메인 LLM 추론이나 도구 실행이 일어나기 전에 가장 먼저 차단**해야 합니다.  
-> 따라서 가드레일 미들웨어는 **`(3) Memory & Prompt`보다 앞(바깥쪽)**에 위치하도록 추가합니다!
+> 악의적인 프롬프트 인젝션이나 오프토픽 질문은 **메모리 검색(`MemoryMiddleware.before_agent`), 프롬프트 조립(`PromptAssembler`), 메인 LLM 추론이나 도구 실행이 일어나기 전에 가장 먼저 차단**해야 합니다.  
+> `InputSafetyGuardrail`과 `TopicAlignmentGuardrail`은 `before_agent` 훅(`jump_to="end"`)에서 동작하므로, **`(3) Memory & Prompt`보다 앞(바깥쪽)**에 배치하면 차단 시 메모리 인출과 모델 호출을 모두 건너뛰고 즉시 종료됩니다! (차단된 턴은 `transcript.db`에 `kind="blocked"`로 기록되어 일반 검색·요약에서 제외됩니다.)
 
 1. 파일 상단에 가드레일 미들웨어 2종 임포트를 추가합니다:
    ```python
@@ -204,7 +204,6 @@ async def create_agent_executor(checkpointer=None):
         system_rules=SUPERVISOR_SYSTEM_PROMPT,
         tool_schemas=active_tools,
         skill_catalog=skill_builder.assemble,
-        l4_docs={},
     )
     prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
 

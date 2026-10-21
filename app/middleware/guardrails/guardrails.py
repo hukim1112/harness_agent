@@ -27,7 +27,7 @@ import logging
 import re
 from typing import Optional, List, Dict, Any, Type, Literal
 from pydantic import BaseModel, ValidationError
-from langchain.agents.middleware import AgentMiddleware, ModelResponse
+from langchain.agents.middleware import AgentMiddleware, ModelResponse, hook_config
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -35,9 +35,24 @@ from app.utils import init_chat_model, normalize_content
 
 logger = logging.getLogger("app.middleware.guardrails")
 
+GUARDRAIL_BLOCKED_KEY = "guardrail_blocked"
+
+
+def _make_blocked_state(blocked_msg: str) -> Dict[str, Any]:
+    """before_agent 훅에서 차단 시 반환할 상태 업데이트 (jump_to='end' + guardrail_blocked 마커)."""
+    return {
+        "messages": [
+            AIMessage(
+                content=blocked_msg,
+                additional_kwargs={GUARDRAIL_BLOCKED_KEY: True},
+            )
+        ],
+        "jump_to": "end",
+    }
+
 
 def _extract_last_user_query(request: Any) -> Optional[str]:
-    """요청 객체(dict 또는 Request)로부터 마지막 사용자 입력 메시지를 추출합니다."""
+    """요청 객체(state dict 또는 Request)로부터 마지막 사용자 입력 메시지를 추출합니다."""
     messages = []
     if isinstance(request, dict):
         messages = request.get("messages", [])
@@ -50,10 +65,21 @@ def _extract_last_user_query(request: Any) -> Optional[str]:
         return None
 
     last_msg = messages[-1]
+    if isinstance(last_msg, (tuple, list)) and len(last_msg) >= 2:
+        role, content = last_msg[0], last_msg[1]
+        if str(role).lower() in ("user", "human"):
+            return normalize_content(content).strip()
+        return None
+    if isinstance(last_msg, dict):
+        role = str(last_msg.get("role") or last_msg.get("type") or "").lower()
+        if role in ("user", "human"):
+            return normalize_content(last_msg.get("content", "")).strip()
+        return None
+
     is_human = (
         isinstance(last_msg, HumanMessage)
-        or getattr(last_msg, "type", None) == "human"
-        or getattr(last_msg, "role", None) == "user"
+        or getattr(last_msg, "type", None) in ("human", "user")
+        or getattr(last_msg, "role", None) in ("user", "human")
     )
     if not is_human:
         return None
@@ -137,21 +163,22 @@ class InputSafetyGuardrail(AgentMiddleware):
 
         return None
 
-    def _handle_error(self, err: Exception) -> Optional[ModelResponse]:
+    def _handle_error(self, err: Exception) -> Optional[Dict[str, Any]]:
         """Fail-Open / Fail-Closed 전략에 따라 장애 시 행동을 결정합니다."""
         logger.error(f"⚠️ [InputSafetyGuardrail] 가드레일 LLM 호출 실패: {err}")
         if self.fail_mode == "close":
-            return ModelResponse(
-                result=[AIMessage(content="🛡️ [Safety Guard Error] 보안 검증 서비스 장애(Fail-Closed)로 요청이 차단되었습니다.")]
+            return _make_blocked_state(
+                "🛡️ [Safety Guard Error] 보안 검증 서비스 장애(Fail-Closed)로 요청이 차단되었습니다."
             )
         # fail_mode == "open": 통과
         logger.warning("⚠️ [InputSafetyGuardrail] Fail-Open 정책에 따라 검증을 건너뛰고 진행합니다.")
         return None
 
-    def wrap_model_call(self, request: Any, handler: Any) -> Any:
-        user_query = _extract_last_user_query(request)
+    @hook_config(can_jump_to=["end"])
+    def before_agent(self, state: Dict[str, Any], runtime: Any = None) -> Optional[Dict[str, Any]]:
+        user_query = _extract_last_user_query(state)
         if not user_query:
-            return handler(request)
+            return None
 
         try:
             chain = self.prompt | self.llm
@@ -160,18 +187,19 @@ class InputSafetyGuardrail(AgentMiddleware):
             blocked_msg = self._parse_judgment(judgment_raw)
             if blocked_msg:
                 logger.warning(f"🛡️ [InputSafetyGuardrail] 차단됨: {judgment_raw}")
-                return ModelResponse(result=[AIMessage(content=blocked_msg)])
+                return _make_blocked_state(blocked_msg)
         except Exception as e:
             fallback = self._handle_error(e)
             if fallback:
                 return fallback
 
-        return handler(request)
+        return None
 
-    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
-        user_query = _extract_last_user_query(request)
+    @hook_config(can_jump_to=["end"])
+    async def abefore_agent(self, state: Dict[str, Any], runtime: Any = None) -> Optional[Dict[str, Any]]:
+        user_query = _extract_last_user_query(state)
         if not user_query:
-            return await handler(request)
+            return None
 
         try:
             chain = self.prompt | self.llm
@@ -180,13 +208,13 @@ class InputSafetyGuardrail(AgentMiddleware):
             blocked_msg = self._parse_judgment(judgment_raw)
             if blocked_msg:
                 logger.warning(f"🛡️ [InputSafetyGuardrail] 차단됨: {judgment_raw}")
-                return ModelResponse(result=[AIMessage(content=blocked_msg)])
+                return _make_blocked_state(blocked_msg)
         except Exception as e:
             fallback = self._handle_error(e)
             if fallback:
                 return fallback
 
-        return await handler(request)
+        return None
 
 
 # =====================================================================
@@ -269,19 +297,20 @@ class TopicAlignmentGuardrail(AgentMiddleware):
             f"관련된 질문을 주시면 신속하게 지원해 드리겠습니다."
         )
 
-    def _handle_error(self, err: Exception) -> Optional[ModelResponse]:
+    def _handle_error(self, err: Exception) -> Optional[Dict[str, Any]]:
         logger.error(f"⚠️ [TopicAlignmentGuardrail] 가드레일 LLM 호출 실패: {err}")
         if self.fail_mode == "close":
-            return ModelResponse(
-                result=[AIMessage(content="🛑 [Topic Guard Error] 주제 검증 서비스 장애(Fail-Closed)로 요청이 차단되었습니다.")]
+            return _make_blocked_state(
+                "🛑 [Topic Guard Error] 주제 검증 서비스 장애(Fail-Closed)로 요청이 차단되었습니다."
             )
         logger.warning("⚠️ [TopicAlignmentGuardrail] Fail-Open 정책에 따라 검증을 건너뛰고 진행합니다.")
         return None
 
-    def wrap_model_call(self, request: Any, handler: Any) -> Any:
-        user_query = _extract_last_user_query(request)
+    @hook_config(can_jump_to=["end"])
+    def before_agent(self, state: Dict[str, Any], runtime: Any = None) -> Optional[Dict[str, Any]]:
+        user_query = _extract_last_user_query(state)
         if not user_query:
-            return handler(request)
+            return None
 
         try:
             chain = self.prompt | self.llm
@@ -290,18 +319,19 @@ class TopicAlignmentGuardrail(AgentMiddleware):
             blocked_msg = self._parse_judgment(judgment_raw)
             if blocked_msg:
                 logger.warning(f"🛑 [TopicAlignmentGuardrail] 차단됨: {judgment_raw}")
-                return ModelResponse(result=[AIMessage(content=blocked_msg)])
+                return _make_blocked_state(blocked_msg)
         except Exception as e:
             fallback = self._handle_error(e)
             if fallback:
                 return fallback
 
-        return handler(request)
+        return None
 
-    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
-        user_query = _extract_last_user_query(request)
+    @hook_config(can_jump_to=["end"])
+    async def abefore_agent(self, state: Dict[str, Any], runtime: Any = None) -> Optional[Dict[str, Any]]:
+        user_query = _extract_last_user_query(state)
         if not user_query:
-            return await handler(request)
+            return None
 
         try:
             chain = self.prompt | self.llm
@@ -310,13 +340,13 @@ class TopicAlignmentGuardrail(AgentMiddleware):
             blocked_msg = self._parse_judgment(judgment_raw)
             if blocked_msg:
                 logger.warning(f"🛑 [TopicAlignmentGuardrail] 차단됨: {judgment_raw}")
-                return ModelResponse(result=[AIMessage(content=blocked_msg)])
+                return _make_blocked_state(blocked_msg)
         except Exception as e:
             fallback = self._handle_error(e)
             if fallback:
                 return fallback
 
-        return await handler(request)
+        return None
 
 
 # =====================================================================

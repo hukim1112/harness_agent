@@ -1,27 +1,42 @@
 """
 ===============================================================================
-Memory Middleware — AgentMiddleware (before_agent + after_agent + get_tools)
+Memory Middleware — AgentMiddleware (before_agent + wrap hooks + after_agent + tools)
 ===============================================================================
 Source: frontier-agent-lab/modules/hermes/memory_middleware.py
         + memory_tool.py + session_search_tool.py (도구 통합)
 
 고응집 메모리 미들웨어 — 스토어, 도구, 훅을 모두 소유합니다.
 
+세션 데이터 이원화 (Dual-tier Session Data):
+- 압축본 (L1 Short-term / Working): checkpointer state — 모델 입력용, Auto-Compact가 교체
+- 전체본 (L2 Episodic 원문): transcript.db — 이 미들웨어가 메시지가 생성되는 즉시 추가 기록
+- 색인 (L2 Episodic 요약): episodic.db — 대화가 멈춘 뒤 원문을 읽어 주제별 요약 생성
+- L3 Semantic: MEMORY.md / USER.md
+
 Hooks:
-- before_agent / abefore_agent: L2(에피소드) 자동 인출 + L3(시맨틱) 프리페치 → recalled_memory 주입
-- after_agent / aafter_agent: 비동기 스레드 풀로 Background Review 실행
-  (메모리 학습 활성화 시 MEMORY.md/USER.md 갱신 및 episodic.db 저장·요약)
+- before_agent / abefore_agent:
+    새 턴 시작 → 유휴 리뷰 취소, 사용자 질문 원문 기록,
+    L3(시맨틱) 프리페치 + L2(에피소드 요약) 자동 인출 → recalled_memory 주입
+- wrap_model_call: 꺼진 메모리 도구 필터링 → 모델 응답(AI 메시지·도구 호출) 원문 기록
+- wrap_tool_call: 사용자 ContextVar 전파 + 꺼진 도구 차단 → 도구 결과 원문 기록
+- after_agent / aafter_agent: 누락분 보정 기록(가드레일 차단 턴은 kind=blocked),
+    Background Review 예약 (유휴 15초 / 최대 30분 후 실행)
+
+원문 기록 스위치는 메모리 학습/주입 스위치와 독립입니다:
+- memory.config의 transcript.enabled (배포 정책) + AgentContext.transcript_enabled (요청별)
+- episodic_memory_enabled: 과거 세션 요약을 검색해 프롬프트에 주입할지
+- episodic_learning_enabled: 원문을 LLM으로 요약해 episodic.db에 학습할지
 
 Tool Factory:
 - self.tools: [memory(), session_recall()] 도구를 소유하며, create_agent()가 생성 시 자동으로 에이전트 도구로 주입
   - memory(): 에이전트가 직접 MEMORY.md / USER.md를 관리 (add/replace/remove)
-  - session_recall(): Anchor 기반 과거 세션 상세 메시지 인출
+  - session_recall(): Anchor 기반 과거 세션 원문 인출 (transcript.db)
   - session_search는 도구로 제공하지 않음 (before_agent가 자동 인출)
 
-Background Review (Hermes _spawn_background_review 패턴):
+Background Review (Hermes _spawn_background_review + review_idle_queue 패턴):
 - 메인 스레드를 블로킹하지 않음 (ThreadPoolExecutor + 세션별 cancel_event 취소 제어)
 - 별도 LLM 호출로 대화 리뷰 → memory(add/replace) 파싱 실행
-- EpisodicStore에 세션 요약 저장
+- EpisodicStore에 세션 주제별 요약 저장
 ===============================================================================
 """
 
@@ -36,10 +51,19 @@ from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import BaseMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain.tools import tool as langchain_tool
 from app.utils.message_utils import normalize_content
 from app.middleware.memory.semantic_store import SemanticMemoryStore
+from app.middleware.memory.review_queue import IdleReviewQueue
+from app.utils.message_markers import last_user_turn_start
+from app.middleware.memory.transcript_store import (
+    TranscriptStore,
+    ensure_message_id,
+    format_tool_call,
+    is_blocked_message,
+    render_transcript_for_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,16 +98,41 @@ Current USER.md entries:
 """
 
 
-def _serialize_message_for_review(msg) -> Dict[str, str]:
-    """메시지를 리뷰용 텍스트로 직렬화."""
+def _serialize_message_for_review(msg) -> Dict[str, Any]:
+    """메시지를 리뷰/원문 저장용 구조화 딕셔너리로 직렬화."""
     if isinstance(msg, BaseMessage):
-        return {"role": msg.type, "content": msg.content or ""}
-    if isinstance(msg, dict):
-        return {
-            "role": msg.get("role", msg.get("type", "unknown")),
-            "content": msg.get("content", ""),
+        msg_id = ensure_message_id(msg)
+        data: Dict[str, Any] = {
+            "id": msg_id,
+            "role": msg.type,
+            "content": normalize_content(msg.content) if msg.content else "",
         }
+        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+            data["tool_calls"] = [format_tool_call(tc) for tc in msg.tool_calls]
+        if isinstance(msg, ToolMessage):
+            data["tool_call_id"] = getattr(msg, "tool_call_id", None)
+            data["tool_name"] = getattr(msg, "name", None)
+        ak = getattr(msg, "additional_kwargs", None)
+        if isinstance(ak, dict) and ak:
+            data["additional_kwargs"] = dict(ak)
+        return data
+    if isinstance(msg, dict):
+        return dict(msg)
     return {"role": "unknown", "content": str(msg)}
+
+
+def _extract_response_messages(response: Any) -> List[BaseMessage]:
+    """wrap_model_call 핸들러 반환값(ModelResponse 또는 AIMessage)에서 BaseMessage 목록 추출."""
+    if isinstance(response, BaseMessage):
+        return [response]
+    result = getattr(response, "result", None)
+    if isinstance(result, list):
+        return [m for m in result if isinstance(m, BaseMessage)]
+    if isinstance(response, dict):
+        msgs = response.get("messages")
+        if isinstance(msgs, list):
+            return [m for m in msgs if isinstance(m, BaseMessage)]
+    return []
 
 
 def _sanitize_user_id(user_id: Optional[str]) -> str:
@@ -113,6 +162,11 @@ class MemoryMiddleware(AgentMiddleware):
         episodic_store,
         review_llm=None,
         top_k: int = 2,
+        auto_recall_episodic: bool = True,
+        transcript_store: Optional[TranscriptStore] = None,
+        transcript_enabled: bool = True,
+        finalize_idle_settle_s: float = 15.0,
+        finalize_max_age_s: float = 1800.0,
     ):
         """
         Args:
@@ -120,11 +174,25 @@ class MemoryMiddleware(AgentMiddleware):
             episodic_store: 공유 EpisodicStore (user_id 컬럼으로 사용자 격리)
             review_llm: Background Review(시맨틱 갱신·세션 요약)에 사용할 LLM
             top_k: 매 턴 Layer 4에 자동 주입할 과거 세션(Episodic) 요약 개수
+            transcript_store: 원문 전체본 저장소 (TranscriptStore, 미지정 시 episodic_store.transcript 사용)
+            transcript_enabled: 대화 원문(transcript.db) 자동 백업 활성화 여부 (메모리 학습 스위치와 독립)
+            finalize_idle_settle_s: 유휴 지연 요약 대기 시간(초, 기본 15초)
+            finalize_max_age_s: 연속 대화 시 최대 요약 보류 시간(초, 기본 1800초=30분)
         """
         self.semantic_store = semantic_store
         self.episodic_store = episodic_store
         self.review_llm = review_llm
         self.top_k = max(0, int(top_k))
+        self.transcript_enabled = bool(transcript_enabled)
+
+        if transcript_store is not None:
+            self.transcript_store: Optional[TranscriptStore] = transcript_store
+            if self.episodic_store is not None:
+                self.episodic_store.transcript_store = transcript_store
+        elif self.episodic_store is not None and hasattr(self.episodic_store, "transcript"):
+            self.transcript_store = self.episodic_store.transcript
+        else:
+            self.transcript_store = None
 
         from pathlib import Path
         from app.utils.workspace import USERS_BASE_DIR, resolve_user_memory_dir
@@ -144,7 +212,7 @@ class MemoryMiddleware(AgentMiddleware):
         }
         self._loaded_session_by_user: Dict[str, str] = {}
 
-        # Background Review 제어 (세션별 중복 실행 방지 & 취소 제어 + 스레드 풀 제한)
+        # Background Review 제어 (유휴 큐 + 세션별 중복 실행 방지 & 취소 제어 + 스레드 풀 제한)
         self._review_meta_lock = threading.Lock()
         self._review_executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="memory-bg-review"
@@ -152,9 +220,16 @@ class MemoryMiddleware(AgentMiddleware):
         self._review_cancel_events: Dict[str, threading.Event] = {}
         self._review_futures: Dict[str, concurrent.futures.Future] = {}
         self._session_review_locks: Dict[str, threading.Lock] = {}
+        self._review_queue = IdleReviewQueue(
+            dispatch_fn=self._dispatch_review_from_queue,
+            settle_s=finalize_idle_settle_s,
+            max_age_s=finalize_max_age_s,
+        )
 
+        self.auto_recall_episodic = auto_recall_episodic
         # 내부에서 도구 생성 (스토어 바인딩을 미들웨어가 소유)
         self._memory_tool = self._create_memory_tool()
+        self._session_search_tool = self._create_session_search_tool()
         self._session_recall_tool = self._create_session_recall_tool()
         # AgentMiddleware.tools — LangChain create_agent()가 생성 시 한 번 읽어 에이전트 도구로 자동 주입합니다
         # (langchain/agents/factory.py의 middleware_tools 수집 → tools=와 합쳐 등록).
@@ -164,9 +239,9 @@ class MemoryMiddleware(AgentMiddleware):
         """메모리 도구 목록 반환 (create_agent 사용 시에는 self.tools를 통해 자동 등록됨).
 
         Returns:
-            [memory_tool, session_recall_tool]
+            [memory_tool, session_search_tool, session_recall_tool]
         """
-        return [self._memory_tool, self._session_recall_tool]
+        return [self._memory_tool, self._session_search_tool, self._session_recall_tool]
 
     def _get_semantic_store(self, user_id: Optional[str] = None) -> SemanticMemoryStore:
         """user_id에 해당하는 SemanticMemoryStore를 반환합니다.
@@ -218,20 +293,53 @@ class MemoryMiddleware(AgentMiddleware):
             pass
         return _sanitize_user_id(_memory_user_id_var.get())
 
+    def _is_transcript_enabled(self, runtime: Any = None) -> bool:
+        """원문 저장소(transcript.db) 기록이 활성화되어 있는지 확인 (메모리 학습 스위치와 독립)."""
+        if not self.transcript_enabled or self.transcript_store is None:
+            return False
+        ctx = getattr(runtime, "context", None) if runtime is not None else None
+        if ctx is not None and not getattr(ctx, "transcript_enabled", True):
+            return False
+        return True
+
     def _cancel_active_review(self, session_id: str) -> None:
-        """특정 세션의 진행 중인 Background Review가 있으면 취소 신호를 보냅니다."""
+        """새 턴 시작: 대기 중인 리뷰를 보류하고, 유휴 시간 만료로 실행 중이던 리뷰는 취소합니다.
+
+        취소 판단은 IdleReviewQueue가 담당합니다 (max_age로 실행된 리뷰는 끝까지 진행해 30분 보장 유지).
+        """
         if not session_id or session_id == "unknown":
             return
+        self._review_queue.mark_active(session_id)
+
+    def _dispatch_review_from_queue(
+        self, payload: Dict[str, Any], cancel_event: threading.Event
+    ) -> None:
+        """IdleReviewQueue 타이머(또는 flush) 만료 시 스레드 풀로 Background Review를 디스패치합니다."""
+        session_id = payload["session_id"]
         with self._review_meta_lock:
             prev_event = self._review_cancel_events.pop(session_id, None)
-            if prev_event is not None:
+            if prev_event is not None and prev_event is not cancel_event:
                 prev_event.set()
-            prev_future = self._review_futures.pop(session_id, None)
-            if prev_future is not None and not prev_future.done():
-                prev_future.cancel()
+            self._review_cancel_events[session_id] = cancel_event
+            self._session_review_locks.setdefault(session_id, threading.Lock())
+            future = self._review_executor.submit(
+                self._background_review,
+                payload["messages_snapshot"],
+                session_id,
+                payload["user_id"],
+                payload["semantic_learning"],
+                payload["episodic_learning"],
+                cancel_event,
+                payload.get("transcript_enabled", True),
+            )
+            self._review_futures[session_id] = future
+            future.add_done_callback(
+                lambda _f, sid=session_id, ce=cancel_event: self._review_queue.finished(sid, ce)
+            )
 
     def wait_for_reviews(self, timeout: float = 10.0) -> None:
-        """현재 실행 중인 모든 Background Review 완료를 대기합니다 (테스트 검증용)."""
+        """유휴 대기 중인 슬롯을 즉시 디스패치(flush)하고 실행 중인 모든 Background Review 완료를 대기합니다."""
+        self._review_queue.flush()
         with self._review_meta_lock:
             futures = list(self._review_futures.values())
         if futures:
@@ -295,6 +403,74 @@ class MemoryMiddleware(AgentMiddleware):
 
         return memory
 
+    def _create_session_search_tool(self):
+        """@tool session_search(query, limit) 생성 — 1단계 세션 탐색 및 브라우즈."""
+        mw = self
+
+        @langchain_tool
+        def session_search(
+            query: str = "",
+            limit: int = 3,
+        ) -> str:
+            """Search past conversation sessions to recall relevant context.
+
+            Two modes (inferred from arguments):
+            1. DISCOVERY: Pass a query string to search for related past sessions via FTS5.
+               Returns session summaries, keywords, and match snippets.
+            2. BROWSE: Call with no arguments (or empty query) to list recent sessions chronologically.
+
+            Args:
+                query: Search query in English (empty = browse recent sessions)
+                limit: Max sessions to return (default 3)
+
+            Returns:
+                JSON with session list: [{session_id, summary, keywords, snippet}, ...]
+            """
+            uid = mw._resolve_current_user_id()
+            epi_store = mw._get_episodic_store(uid)
+            if query.strip():
+                results = _run_async_safe(
+                    epi_store.search_sessions(query, top_k=limit, user_id=uid)
+                )
+                # episodic.db 요약에 아직 반영되지 않았거나 정확한 식별자가 원문(transcript.db)에만 있는 경우 보충
+                if len(results) < limit and mw.transcript_store is not None:
+                    seen_sids = {r.get("session_id") for r in results}
+                    raw_hits = mw.transcript_store.search_sync(
+                        query=query, top_k=limit, user_id=uid
+                    )
+                    for hit in raw_hits:
+                        sid = hit.get("session_id")
+                        if sid and sid not in seen_sids:
+                            seen_sids.add(sid)
+                            results.append({
+                                "session_id": sid,
+                                "summary": f"(Transcript match) {hit.get('snippet', '')}",
+                                "topics": [],
+                                "keywords": [],
+                                "tool_names": [],
+                                "snippet": hit.get("snippet", ""),
+                            })
+                            if len(results) >= limit:
+                                break
+            else:
+                results = _run_async_safe(
+                    epi_store.browse_recent(limit=limit, user_id=uid)
+                )
+
+            if not results:
+                return json.dumps({
+                    "results": [],
+                    "message": "No matching sessions found." if query else "No past sessions recorded.",
+                })
+
+            return json.dumps({
+                "query": query or "(browse recent)",
+                "results": results,
+                "count": len(results),
+            }, ensure_ascii=False, indent=2)
+
+        return session_search
+
     def _create_session_recall_tool(self):
         """@tool session_recall(session_id, anchor_message, window) 생성."""
         mw = self
@@ -308,14 +484,28 @@ class MemoryMiddleware(AgentMiddleware):
                     "messages": [],
                     "message": f"No messages found for session '{session_id}'.",
                 })
+            max_chars = (
+                mw.transcript_store.recall_max_chars
+                if mw.transcript_store is not None
+                else 2000
+            )
+            formatted_msgs = []
+            for m in messages:
+                # transcript.db 결과는 이미 키워드 주변으로 잘려 있음(잘림 안내 문구 포함) → 여유분을 두고 상한만 적용
+                item: Dict[str, Any] = {
+                    "role": m.get("role", "unknown"),
+                    "content": (m.get("content") or "")[:max_chars + 200],
+                }
+                if m.get("tool_calls"):
+                    item["tool_calls"] = m["tool_calls"]
+                if m.get("tool_name"):
+                    item["tool_name"] = m["tool_name"]
+                formatted_msgs.append(item)
             return json.dumps({
                 "session_id": session_id,
                 "anchor": anchor_message or "(tail view)",
-                "message_count": len(messages),
-                "messages": [
-                    {"role": m["role"], "content": m["content"][:500]}
-                    for m in messages
-                ],
+                "message_count": len(formatted_msgs),
+                "messages": formatted_msgs,
             }, ensure_ascii=False, indent=2)
 
         @langchain_tool
@@ -328,8 +518,8 @@ class MemoryMiddleware(AgentMiddleware):
 
             Anchor-based retrieval (Hermes Lineage pattern):
             1. Verifies that the target session belongs to the current user (user_id isolation)
-            2. Finds the message best matching anchor_message keywords
-            3. Returns ±window messages around the anchor
+            2. Finds the message best matching anchor_message keywords in the full session transcript
+            3. Returns ±window messages around the anchor (including tool calls and outputs)
             4. Always includes bookends (first 3 + last 3 messages of the session)
 
             If anchor_message is empty, returns the last `window` messages of the session.
@@ -342,7 +532,7 @@ class MemoryMiddleware(AgentMiddleware):
                 window: Number of messages before/after the anchor (default 5)
 
             Returns:
-                JSON with messages: [{role, content}, ...]
+                JSON with messages: [{role, content, tool_calls?, tool_name?}, ...]
             """
             uid = mw._resolve_current_user_id()
             epi_store = mw._get_episodic_store(uid)
@@ -375,7 +565,7 @@ class MemoryMiddleware(AgentMiddleware):
         return session_recall
 
     # ══════════════════════════════════════════════════════════════════
-    # 도구 컨텍스트 전파 및 게이팅
+    # 도구 컨텍스트 전파, 게이팅 및 실시간 원문(transcript.db) 기록
     # ══════════════════════════════════════════════════════════════════
 
     def _disabled_tool_names(self, runtime: Any) -> set:
@@ -398,10 +588,48 @@ class MemoryMiddleware(AgentMiddleware):
         return request.override(tools=tools)
 
     def wrap_model_call(self, request, handler):
-        return handler(self._filter_tools(request))
+        response = handler(self._filter_tools(request))
+        out_msgs = _extract_response_messages(response)
+        for m in out_msgs:
+            ensure_message_id(m)
+        runtime = getattr(request, "runtime", None)
+        if out_msgs and self._is_transcript_enabled(runtime) and self.transcript_store is not None:
+            session_id = self._get_session_id(runtime, request)
+            if session_id != "unknown":
+                user_id = self._resolve_current_user_id(runtime)
+                turn_id = self.transcript_store.current_turn(session_id)
+                try:
+                    self.transcript_store.append(
+                        session_id=session_id,
+                        user_id=user_id,
+                        messages=out_msgs,
+                        turn_id=turn_id,
+                    )
+                except Exception as e:
+                    logger.warning("[MemoryMiddleware] Transcript append on model call failed: %s", e)
+        return response
 
     async def awrap_model_call(self, request, handler):
-        return await handler(self._filter_tools(request))
+        response = await handler(self._filter_tools(request))
+        out_msgs = _extract_response_messages(response)
+        for m in out_msgs:
+            ensure_message_id(m)
+        runtime = getattr(request, "runtime", None)
+        if out_msgs and self._is_transcript_enabled(runtime) and self.transcript_store is not None:
+            session_id = self._get_session_id(runtime, request)
+            if session_id != "unknown":
+                user_id = self._resolve_current_user_id(runtime)
+                turn_id = self.transcript_store.current_turn(session_id)
+                try:
+                    await self.transcript_store.aappend(
+                        session_id=session_id,
+                        user_id=user_id,
+                        messages=out_msgs,
+                        turn_id=turn_id,
+                    )
+                except Exception as e:
+                    logger.warning("[MemoryMiddleware] Transcript aappend on model call failed: %s", e)
+        return response
 
     def _blocked_tool_message(self, request) -> Optional[ToolMessage]:
         name = request.tool_call.get("name")
@@ -415,48 +643,143 @@ class MemoryMiddleware(AgentMiddleware):
         )
 
     def wrap_tool_call(self, request, handler):
+        runtime = getattr(request, "runtime", None)
         blocked = self._blocked_tool_message(request)
         if blocked:
+            ensure_message_id(blocked)
+            if self._is_transcript_enabled(runtime) and self.transcript_store is not None:
+                session_id = self._get_session_id(runtime, request)
+                if session_id != "unknown":
+                    user_id = self._resolve_current_user_id(runtime)
+                    turn_id = self.transcript_store.current_turn(session_id)
+                    try:
+                        self.transcript_store.append(
+                            session_id=session_id,
+                            user_id=user_id,
+                            messages=[blocked],
+                            turn_id=turn_id,
+                        )
+                    except Exception:
+                        pass
             return blocked
-        uid = self._resolve_current_user_id(getattr(request, "runtime", None))
+
+        uid = self._resolve_current_user_id(runtime)
         tok = _memory_user_id_var.set(uid)
         try:
-            return handler(request)
+            result = handler(request)
         finally:
             _memory_user_id_var.reset(tok)
 
+        if isinstance(result, BaseMessage):
+            ensure_message_id(result)
+            if self._is_transcript_enabled(runtime) and self.transcript_store is not None:
+                session_id = self._get_session_id(runtime, request)
+                if session_id != "unknown":
+                    turn_id = self.transcript_store.current_turn(session_id)
+                    try:
+                        self.transcript_store.append(
+                            session_id=session_id,
+                            user_id=uid,
+                            messages=[result],
+                            turn_id=turn_id,
+                        )
+                    except Exception as e:
+                        logger.warning("[MemoryMiddleware] Transcript append on tool call failed: %s", e)
+        return result
+
     async def awrap_tool_call(self, request, handler):
+        runtime = getattr(request, "runtime", None)
         blocked = self._blocked_tool_message(request)
         if blocked:
+            ensure_message_id(blocked)
+            if self._is_transcript_enabled(runtime) and self.transcript_store is not None:
+                session_id = self._get_session_id(runtime, request)
+                if session_id != "unknown":
+                    user_id = self._resolve_current_user_id(runtime)
+                    turn_id = self.transcript_store.current_turn(session_id)
+                    try:
+                        await self.transcript_store.aappend(
+                            session_id=session_id,
+                            user_id=user_id,
+                            messages=[blocked],
+                            turn_id=turn_id,
+                        )
+                    except Exception:
+                        pass
             return blocked
-        uid = self._resolve_current_user_id(getattr(request, "runtime", None))
+
+        uid = self._resolve_current_user_id(runtime)
         tok = _memory_user_id_var.set(uid)
         try:
-            return await handler(request)
+            result = await handler(request)
         finally:
             _memory_user_id_var.reset(tok)
+
+        if isinstance(result, BaseMessage):
+            ensure_message_id(result)
+            if self._is_transcript_enabled(runtime) and self.transcript_store is not None:
+                session_id = self._get_session_id(runtime, request)
+                if session_id != "unknown":
+                    turn_id = self.transcript_store.current_turn(session_id)
+                    try:
+                        await self.transcript_store.aappend(
+                            session_id=session_id,
+                            user_id=uid,
+                            messages=[result],
+                            turn_id=turn_id,
+                        )
+                    except Exception as e:
+                        logger.warning("[MemoryMiddleware] Transcript aappend on tool call failed: %s", e)
+        return result
 
     # ══════════════════════════════════════════════════════════════════
     # AgentMiddleware Hooks
     # ══════════════════════════════════════════════════════════════════
 
+    def _record_turn_start(self, state: Dict[str, Any], runtime: Any) -> tuple[str, str]:
+        """턴 시작 시 세션 유휴 리뷰를 취소하고 사용자 입력 메시지를 transcript.db에 즉시 기록합니다."""
+        session_id = self._get_session_id(runtime)
+        user_id = self._resolve_current_user_id(runtime)
+        _memory_user_id_var.set(user_id)
+
+        # 같은 세션에서 새 턴이 시작되면 대기/진행 중이던 이전 턴 Background Review를 즉시 취소
+        self._cancel_active_review(session_id)
+
+        messages = state.get("messages", [])
+        for m in messages:
+            if isinstance(m, BaseMessage):
+                ensure_message_id(m)
+
+        if (
+            session_id != "unknown"
+            and messages
+            and self._is_transcript_enabled(runtime)
+            and self.transcript_store is not None
+        ):
+            turn_id = self.transcript_store.begin_turn(session_id)
+            try:
+                self.transcript_store.append(
+                    session_id=session_id,
+                    user_id=user_id,
+                    messages=messages,
+                    turn_id=turn_id,
+                )
+            except Exception as e:
+                logger.warning("[MemoryMiddleware] Transcript append on before_agent failed: %s", e)
+
+        return session_id, user_id
+
     def _prepare_turn_and_semantic_memory(
-        self, runtime: Any
+        self, state: Dict[str, Any], runtime: Any
     ) -> Optional[tuple[Any, str, str, List[str]]]:
-        """턴 시작 시 session_id/user_id를 해석하고, 이전 리뷰 취소 및 L3 Semantic Memory 프리페치를 수행합니다."""
+        """턴 시작 시 원문 기록, 이전 리뷰 취소 및 L3 Semantic Memory 프리페치를 수행합니다."""
+        session_id, user_id = self._record_turn_start(state, runtime)
         ctx = getattr(runtime, "context", None)
         if not ctx:
             return None
 
-        session_id = self._get_session_id(runtime)
         if session_id != "unknown":
             ctx.session_id = session_id
-
-        user_id = self._resolve_current_user_id(runtime)
-        _memory_user_id_var.set(user_id)
-
-        # 같은 세션에서 새 턴이 시작되면 진행 중이던 이전 턴 Background Review를 즉시 취소
-        self._cancel_active_review(session_id)
 
         recalled_parts: List[str] = []
 
@@ -499,8 +822,8 @@ class MemoryMiddleware(AgentMiddleware):
         return ctx, session_id, user_id, recalled_parts
 
     def before_agent(self, state: Dict[str, Any], runtime: Any) -> Optional[Dict[str, Any]]:
-        """동기 실행 경로용 L2+L3 메모리 인출 → AgentContext.recalled_memory에 주입."""
-        prepared = self._prepare_turn_and_semantic_memory(runtime)
+        """동기 실행 경로용 원문 기록 + L2+L3 메모리 인출 → AgentContext.recalled_memory에 주입."""
+        prepared = self._prepare_turn_and_semantic_memory(state, runtime)
         if not prepared:
             return None
         ctx, session_id, user_id, recalled_parts = prepared
@@ -530,8 +853,8 @@ class MemoryMiddleware(AgentMiddleware):
         return None
 
     async def abefore_agent(self, state: Dict[str, Any], runtime: Any) -> Optional[Dict[str, Any]]:
-        """비동기 실행 경로(FastAPI ainvoke/astream_events)용 네이티브 논블로킹 L2+L3 메모리 인출."""
-        prepared = await asyncio.to_thread(self._prepare_turn_and_semantic_memory, runtime)
+        """비동기 실행 경로(FastAPI ainvoke/astream_events)용 네이티브 논블로킹 원문 기록 + L2+L3 메모리 인출."""
+        prepared = await asyncio.to_thread(self._prepare_turn_and_semantic_memory, state, runtime)
         if not prepared:
             return None
         ctx, session_id, user_id, recalled_parts = prepared
@@ -560,60 +883,95 @@ class MemoryMiddleware(AgentMiddleware):
         return None
 
     def after_agent(self, state: Dict[str, Any], runtime: Any) -> Optional[Dict[str, Any]]:
-        """비동기 스레드 풀로 Background Review 실행 (세션별 이전 리뷰 자동 취소).
+        """턴 종료 시 누락 메시지 원문 보정 기록 및 유휴 지연 Background Review 예약.
 
-        Hermes 패턴: 메인 응답에 영향 없이 백그라운드에서 메모리 갱신하되,
-        같은 세션의 이전 턴 리뷰가 아직 돌고 있으면 취소하여 옛 요약이 최신 요약을 덮어쓰지 않도록 보장.
+        1. wrap 훅을 거치지 않은 메시지(예: 가드레일 조기 차단 AIMessage 또는 테스트 직접 호출)를
+           transcript.db에 멱등(idempotent) 보정 기록합니다.
+        2. 현재 턴이 가드레일에 의해 차단(guardrail_blocked=True)된 경우 해당 턴 전체를
+           kind='blocked'로 마킹하고 메모리 학습/요약(Background Review)을 건너뜁니다.
+        3. 정상 턴인 경우 IdleReviewQueue(기본 유휴 15초 / 최대 30분)에 리뷰를 예약합니다.
         """
+        messages = state.get("messages", [])
+        if not messages:
+            return None
+
+        for m in messages:
+            if isinstance(m, BaseMessage):
+                ensure_message_id(m)
+
+        session_id = self._get_session_id(runtime)
+        user_id = self._resolve_current_user_id(runtime)
+        turn_blocked = is_blocked_message(messages[-1])
+        transcript_on = self._is_transcript_enabled(runtime)
+
+        if session_id != "unknown" and transcript_on and self.transcript_store is not None:
+            try:
+                if turn_blocked:
+                    # 가드레일이 before_agent에서 턴을 끝내면 이 미들웨어의 before_agent가 실행되지 않아
+                    # 새 턴 번호가 없습니다. 차단된 질문·응답만 골라 별도 턴으로 기록합니다.
+                    start = last_user_turn_start(messages)
+                    start = start if start is not None else len(messages) - 1
+                    self.transcript_store.append(
+                        session_id=session_id,
+                        user_id=user_id,
+                        messages=messages[:start],
+                        turn_id=self.transcript_store.current_turn(session_id),
+                    )
+                    self.transcript_store.record_blocked_exchange(session_id, user_id, messages[start:])
+                else:
+                    self.transcript_store.append(
+                        session_id=session_id,
+                        user_id=user_id,
+                        messages=messages,
+                        turn_id=self.transcript_store.current_turn(session_id),
+                    )
+            except Exception as e:
+                logger.warning("[MemoryMiddleware] Transcript append on after_agent failed: %s", e)
+
+        if turn_blocked or len(messages) < 2:
+            return None
+
         ctx = getattr(runtime, "context", None)
         if not ctx:
             return None
 
-        messages = state.get("messages", [])
-        if not messages or len(messages) < 2:
-            return None
-
+        base_learning = getattr(ctx, "memory_learning_enabled", True)
         semantic_learning = (
             getattr(ctx, "semantic_memory_enabled", True)
-            and getattr(ctx, "semantic_learning_enabled", True)
+            and getattr(ctx, "semantic_learning_enabled", base_learning)
         )
         episodic_learning = (
             getattr(ctx, "episodic_memory_enabled", True)
-            and getattr(ctx, "episodic_learning_enabled", True)
+            and getattr(ctx, "episodic_learning_enabled", base_learning)
         )
         if not (semantic_learning or episodic_learning):
             return None
 
-        # 대화 스냅샷 복제
+        # 대화 스냅샷 복제 (transcript.db 비활성화 시 폴백용)
         messages_snapshot = [
             _serialize_message_for_review(m) for m in messages
         ]
-        session_id = self._get_session_id(runtime)
-        user_id = self._resolve_current_user_id(runtime)
 
-        # 같은 세션의 이전 리뷰가 진행 중이면 취소 신호 발송
-        self._cancel_active_review(session_id)
+        # 유휴 큐에 예약 (최신 예약만 유지). 진행 중인 리뷰의 취소는 새 턴의 before_agent가 큐를 통해 처리합니다.
+        self._review_queue.schedule(
+            session_id=session_id,
+            user_id=user_id,
+            payload={
+                "messages_snapshot": messages_snapshot,
+                "session_id": session_id,
+                "user_id": user_id,
+                "semantic_learning": semantic_learning,
+                "episodic_learning": episodic_learning,
+                # 원문 기록이 꺼진 턴이면 리뷰도 원문 저장소를 읽거나 쓰지 않고 스냅샷만 사용
+                "transcript_enabled": transcript_on,
+            },
+        )
 
-        cancel_event = threading.Event()
-        with self._review_meta_lock:
-            self._review_cancel_events[session_id] = cancel_event
-            self._session_review_locks.setdefault(session_id, threading.Lock())
-            future = self._review_executor.submit(
-                self._background_review,
-                messages_snapshot,
-                session_id,
-                user_id,
-                semantic_learning,
-                episodic_learning,
-                cancel_event,
-            )
-            self._review_futures[session_id] = future
-
-        logger.info("Background review scheduled for session %s (user=%s)", session_id, user_id)
+        logger.info("Background review queued for session %s (user=%s)", session_id, user_id)
         return None
 
     async def aafter_agent(self, state: Dict[str, Any], runtime: Any) -> Optional[Dict[str, Any]]:
-        return self.after_agent(state, runtime)
+        return await asyncio.to_thread(self.after_agent, state, runtime)
 
     # ══════════════════════════════════════════════════════════════════
     # Background Review (Bounded ThreadPool + Session Cancel/Lock)
@@ -621,17 +979,20 @@ class MemoryMiddleware(AgentMiddleware):
 
     def _background_review(
         self,
-        messages_snapshot: List[Dict[str, str]],
+        messages_snapshot: List[Dict[str, Any]],
         session_id: str,
         user_id: str = _DEFAULT_USER_ID,
         semantic_learning: bool = True,
         episodic_learning: bool = True,
         cancel_event: Optional[threading.Event] = None,
+        transcript_enabled: bool = True,
     ) -> None:
         """Background Review 워커.
 
-        1. semantic_learning: LLM에게 대화 리뷰 요청 → memory() 호출 파싱 실행
-        2. episodic_learning: EpisodicStore에 세션 저장 + 요약
+        1. 원문 기록이 켜져 있고 transcript.db에 원문이 있으면 세션 전체 원문을 로드(압축 손실 없음).
+           꺼져 있으면 턴 종료 시점의 state 스냅샷만 사용하며, 원문 저장소에는 읽기/쓰기 모두 하지 않습니다.
+        2. semantic_learning: LLM에게 대화 리뷰 요청 → memory() 호출 파싱 실행
+        3. episodic_learning: EpisodicStore에 세션 주제별 요약 저장
         진행 도중 같은 세션에서 새 턴이 시작되어 cancel_event가 설정되면 즉시 중단합니다.
         """
         if cancel_event is not None and cancel_event.is_set():
@@ -647,12 +1008,25 @@ class MemoryMiddleware(AgentMiddleware):
                 session_id, user_id, semantic_learning, episodic_learning,
             )
 
+            full_messages = messages_snapshot
+            if transcript_enabled and self.transcript_store is not None and session_id and session_id != "unknown":
+                try:
+                    transcript_rows = self.transcript_store.read_session_sync(
+                        session_id=session_id,
+                        user_id=user_id,
+                        include_hidden=False,
+                    )
+                    if transcript_rows:
+                        full_messages = transcript_rows
+                except Exception as e:
+                    logger.warning("[BG-Review] Failed to read transcript for %s: %s", session_id, e)
+
             # 1. Semantic Memory 갱신 (LLM 리뷰)
             if semantic_learning and self.review_llm:
                 if cancel_event is not None and cancel_event.is_set():
                     return
                 self._review_semantic_memory(
-                    messages_snapshot, user_id=user_id, cancel_event=cancel_event, session_lock=session_lock
+                    full_messages, user_id=user_id, cancel_event=cancel_event, session_lock=session_lock
                 )
 
             # 2. Episodic Memory 세션 요약 저장
@@ -660,7 +1034,7 @@ class MemoryMiddleware(AgentMiddleware):
                 if cancel_event is not None and cancel_event.is_set():
                     return
                 self._review_episodic_memory(
-                    messages_snapshot, session_id, user_id=user_id, cancel_event=cancel_event, session_lock=session_lock
+                    full_messages, session_id, user_id=user_id, cancel_event=cancel_event, session_lock=session_lock
                 )
 
             logger.info("[BG-Review] Completed for session %s", session_id)
@@ -670,7 +1044,7 @@ class MemoryMiddleware(AgentMiddleware):
 
     def _review_semantic_memory(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],
         user_id: str = _DEFAULT_USER_ID,
         cancel_event: Optional[threading.Event] = None,
         session_lock: Optional[threading.Lock] = None,
@@ -691,15 +1065,17 @@ class MemoryMiddleware(AgentMiddleware):
             f"- {e}" for e in store.user_entries
         ) or "(empty)"
 
-        # 대화 텍스트 구성
-        conversation_text = "\n".join(
-            f"{m['role']}: {m['content']}"
-            for m in messages
-            if m.get("content") and m.get("role") != "tool"
-        )
+        # 대화 텍스트 구성 (원문 및 도구 호출 내역 포함)
+        conversation_text = render_transcript_for_summary(messages, max_chars=4000)
+        if not conversation_text:
+            conversation_text = "\n".join(
+                f"{m.get('role', 'unknown')}: {m.get('content', '')}"
+                for m in messages
+                if m.get("content") and m.get("role") != "tool"
+            )[:4000]
 
         review_prompt = (
-            f"Conversation:\n{conversation_text[:3000]}\n\n"
+            f"Conversation:\n{conversation_text}\n\n"
             + COMBINED_REVIEW_PROMPT.format(
                 memory_entries=memory_entries,
                 user_entries=user_entries,
@@ -781,7 +1157,7 @@ class MemoryMiddleware(AgentMiddleware):
 
     def _review_episodic_memory(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],
         session_id: str,
         user_id: str = _DEFAULT_USER_ID,
         cancel_event: Optional[threading.Event] = None,
@@ -803,9 +1179,11 @@ class MemoryMiddleware(AgentMiddleware):
                             llm=self.review_llm,
                             user_id=user_id,
                             cancel_event=cancel_event,
+                            record_transcript=False,
                         )
                     )
             else:
+                # record_transcript=False: 원문 기록은 훅이 담당하므로 요약 단계에서는 원문 저장소에 쓰지 않음
                 _run_async_safe(
                     epi_store.finalize_session(
                         session_id=session_id,
@@ -813,6 +1191,7 @@ class MemoryMiddleware(AgentMiddleware):
                         llm=self.review_llm,
                         user_id=user_id,
                         cancel_event=cancel_event,
+                        record_transcript=False,
                     )
                 )
         except Exception as e:
@@ -826,12 +1205,13 @@ class MemoryMiddleware(AgentMiddleware):
     def _extract_last_user_query(state: Dict[str, Any]) -> str:
         """state에서 마지막 유저 메시지 추출."""
         messages = state.get("messages", [])
-        for msg in reversed(messages):
-            if isinstance(msg, BaseMessage) and msg.type in ("human", "user"):
-                return msg.content or ""
-            if isinstance(msg, dict) and msg.get("role") in ("human", "user"):
-                return msg.get("content", "")
-        return ""
+        idx = last_user_turn_start(messages)
+        if idx is None:
+            return ""
+        msg = messages[idx]
+        if isinstance(msg, dict):
+            return normalize_content(msg.get("content", "") or "")
+        return normalize_content(getattr(msg, "content", "") or "")
 
     @staticmethod
     def _get_session_id(runtime: Any, request: Any = None) -> str:
@@ -894,6 +1274,19 @@ class MemoryMiddleware(AgentMiddleware):
         for i, s in enumerate(sessions, 1):
             lines.append(f"[Session {i}] {s.get('session_id', 'unknown')}")
             lines.append(f"  Summary: {s.get('summary', 'N/A')}")
+            topics = s.get("topics") or []
+            if isinstance(topics, list) and topics:
+                topic_titles = []
+                for t in topics:
+                    if isinstance(t, str) and t.strip():
+                        topic_titles.append(t.strip())
+                    elif isinstance(t, dict) and (t.get("title") or t.get("outcome")):
+                        topic_titles.append(str(t.get("title") or t.get("outcome") or "").strip())
+                if topic_titles:
+                    lines.append(f"  Topics: {'; '.join(topic_titles[:4])}")
+            tool_names = s.get("tool_names") or []
+            if tool_names:
+                lines.append(f"  Tools: {', '.join(tool_names)}")
             keywords = s.get("keywords", [])
             if keywords:
                 lines.append(f"  Keywords: {', '.join(keywords)}")

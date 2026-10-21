@@ -45,9 +45,26 @@ RETRYABLE_STATUS_KEYWORDS = (
     "resource_exhausted", "resource exhausted",
 )
 
+CONTEXT_OVERFLOW_KEYWORDS = (
+    "413",
+    "prompt_too_long",
+    "context_length_exceeded",
+    "too many tokens",
+    "maximum context length",
+)
+
+
+def _is_context_overflow(error: Exception) -> bool:
+    """에러가 컨텍스트 길이 초과(413 / context_length_exceeded) 에러인지 판별합니다.
+    이 에러는 백업 모델 전환이나 안전 메시지로 삼키지 않고 상위의 CompactorMiddleware(ReactiveCompactor)로 전파합니다."""
+    error_str = str(error).lower()
+    return any(kw in error_str for kw in CONTEXT_OVERFLOW_KEYWORDS)
+
 
 def _is_retryable(error: Exception) -> bool:
     """에러가 재시도할 가치가 있는 일시적(Transient) 에러인지 판별합니다."""
+    if _is_context_overflow(error):
+        return False
     if isinstance(error, RETRYABLE_EXCEPTIONS):
         return True
     error_str = str(error).lower()
@@ -120,9 +137,24 @@ class ModelFallbackMiddleware(AgentMiddleware):
             )
         return ModelResponse(result=[AIMessage(content=content)])
 
+    @staticmethod
+    def _with_fallback_model(request: Any, fallback_llm: Any) -> Any:
+        """request.override(model=...)로 새 요청을 만듭니다 (원본 요청은 바꾸지 않음).
+        override를 지원하지 않는 요청 객체(테스트용 더미 등)에서만 속성을 직접 갱신합니다."""
+        if hasattr(request, "override") and callable(request.override):
+            try:
+                return request.override(model=fallback_llm)
+            except Exception:
+                pass
+        try:
+            request.model = fallback_llm
+        except Exception:
+            pass
+        return request
+
     # ---- Sync ----
     def wrap_model_call(self, request, handler):
-        """동기 모델 호출: Retry → Fallback → Safe Message 3단계 복구."""
+        """동기 모델 호출: Retry → Fallback → Safe Message 3단계 복구 (413은 Compactor로 전파)."""
         primary_error = None
 
         # Phase 1: 주 모델 재시도 (Exponential Backoff)
@@ -130,6 +162,8 @@ class ModelFallbackMiddleware(AgentMiddleware):
             try:
                 return handler(request)
             except Exception as error:
+                if _is_context_overflow(error):
+                    raise error
                 primary_error = error
                 if not _is_retryable(error):
                     print(f"🛑 [ModelFallback] Non-retryable error (attempt {attempt}): {error}")
@@ -146,16 +180,18 @@ class ModelFallbackMiddleware(AgentMiddleware):
         try:
             fallback_llm = self._get_fallback_llm()
             print(f"🔄 [ModelFallback] Switching to backup model '{self.fallback_model_name}'...")
-            request.model = fallback_llm
-            return handler(request)
+            fallback_req = self._with_fallback_model(request, fallback_llm)
+            return handler(fallback_req)
         except Exception as fallback_error:
+            if _is_context_overflow(fallback_error):
+                raise fallback_error
             print(f"🛑 [ModelFallback] Backup model '{self.fallback_model_name}' also failed: {fallback_error}")
             # Phase 3: 안전 종료 메시지 (Graceful Degradation)
             return self._make_safe_message(primary_error, fallback_error)
 
     # ---- Async ----
     async def awrap_model_call(self, request, handler):
-        """비동기 모델 호출: Retry → Fallback → Safe Message 3단계 복구."""
+        """비동기 모델 호출: Retry → Fallback → Safe Message 3단계 복구 (413은 Compactor로 전파)."""
         import asyncio
         primary_error = None
 
@@ -164,6 +200,8 @@ class ModelFallbackMiddleware(AgentMiddleware):
             try:
                 return await handler(request)
             except Exception as error:
+                if _is_context_overflow(error):
+                    raise error
                 primary_error = error
                 if not _is_retryable(error):
                     print(f"🛑 [ModelFallback] Non-retryable error (attempt {attempt}): {error}")
@@ -180,8 +218,10 @@ class ModelFallbackMiddleware(AgentMiddleware):
         try:
             fallback_llm = self._get_fallback_llm()
             print(f"🔄 [ModelFallback] Switching to backup model '{self.fallback_model_name}'...")
-            request.model = fallback_llm
-            return await handler(request)
+            fallback_req = self._with_fallback_model(request, fallback_llm)
+            return await handler(fallback_req)
         except Exception as fallback_error:
+            if _is_context_overflow(fallback_error):
+                raise fallback_error
             print(f"🛑 [ModelFallback] Backup model '{self.fallback_model_name}' also failed: {fallback_error}")
             return self._make_safe_message(primary_error, fallback_error)

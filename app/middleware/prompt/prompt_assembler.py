@@ -333,6 +333,20 @@ class PromptAssemblerMiddleware(AgentMiddleware):
         self.assembler = assembler
         self.merge_system = merge_system
 
+    @staticmethod
+    def _is_pipeline_system_message(msg: SystemMessage) -> bool:
+        """CompactorMiddleware / AmnesiaGuardMiddleware가 주입한 요약·복원 SystemMessage인지 판별합니다."""
+        ak = getattr(msg, "additional_kwargs", None) or {}
+        if ak.get("compaction_artifact"):
+            return True
+        text = str(getattr(msg, "content", "") or "").strip()
+        return text.startswith((
+            "Previous Conversation Summary:",
+            "[Context Collapsed:",
+            "[Compaction Amnesia Guard:",
+            "[Reactive Compact",
+        ))
+
     def _prepare_messages(self, request) -> list:
         ctx = getattr(request.runtime, "context", None)
         user_id = getattr(ctx, "user_id", "default") if ctx else "default"
@@ -415,10 +429,12 @@ class PromptAssemblerMiddleware(AgentMiddleware):
             )
             system_messages = [static_msg, dynamic_msg]
 
-        # Filter out existing SystemMessages to avoid duplication, and clean empty messages
+        # Filter out duplicate L1-L5 SystemMessages while preserving Compactor/AmnesiaGuard SystemMessages
         filtered_msgs = []
         for m in request.messages:
             if isinstance(m, SystemMessage):
+                if self._is_pipeline_system_message(m):
+                    filtered_msgs.append(m)
                 continue
             # Prevent empty parts / Gemini 400 error
             content = getattr(m, "content", "")
