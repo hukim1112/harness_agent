@@ -34,16 +34,15 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (In
    사용자 요청 →
      [1] AgentLogTracer            ← 가장 바깥: 차단 포함 전체 라이프사이클 감사 로깅
      [2] InputSafetyGuardrail      ← before_agent: 프롬프트 인젝션/탈옥 시도 선제 차단 (jump_to="end")
-     [3] TopicAlignmentGuardrail   ← before_agent: 오프토픽 질문 차단 & 대안 안내 (jump_to="end")
-     [4] MemoryMiddleware          ← before_agent(원문 기록 & L2/L3 메모리 인출) + wrap_model/tool(원문 기록 & 도구 필터링) + after_agent(유휴 리뷰 예약)
-     [5] PromptAssemblerMiddleware ← wrap_model_call: 5계층 시스템 프롬프트 조립
-     [6] Compaction                ← ToolResultSwapMiddleware(wrap_tool_call: 대형 도구 결과 디스크 Swap)
+     [3] MemoryMiddleware          ← before_agent(원문 기록 & L2/L3 메모리 인출) + wrap_model/tool(원문 기록 & 도구 필터링) + after_agent(유휴 리뷰 예약)
+     [4] PromptAssemblerMiddleware ← wrap_model_call: 5계층 시스템 프롬프트 조립
+     [5] Compaction                ← ToolResultSwapMiddleware(wrap_tool_call: 대형 도구 결과 디스크 Swap)
                                     + SummarizationMiddleware(before_model: trigger 초과 시 이전 대화 요약)
-     [7] HumanInTheLoopMiddleware  ← 도구 실행 직전 사용자 승인 요청
-     [8] ModelFallbackMiddleware   ← 모델 호출 실패 시 백업 모델로 재시도
-     [9] ToolErrorHandlerMiddleware← 도구 실행 오류 시 에러 메시지로 변환
-    [10] ModelCallLimitMiddleware  ← 무한 루프 방지 (최대 호출 횟수 제한)
-    [11] StopHooksMiddleware       ← after_model: 코드 구문 에러 시 jump_to="model" 자가 교정
+     [6] HumanInTheLoopMiddleware  ← 도구 실행 직전 사용자 승인 요청
+     [7] ModelFallbackMiddleware   ← 모델 호출 실패 시 백업 모델로 재시도
+     [8] ToolErrorHandlerMiddleware← 도구 실행 오류 시 에러 메시지로 변환
+     [9] ModelCallLimitMiddleware  ← 무한 루프 방지 (최대 호출 횟수 제한)
+    [10] StopHooksMiddleware       ← after_model: 코드 구문 에러 시 jump_to="model" 자가 교정
                                   → LLM 모델 호출
 """
 
@@ -84,8 +83,8 @@ from app.middleware.error_control.self_correction import StopHooksMiddleware
 # Context Compaction: 대형 도구 결과 Swap + SummarizationMiddleware
 from app.middleware.compaction import create_compaction_middleware
 
-# Mission 06: 입력 보안 & 주제 정렬 가드레일
-from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
+# Mission 06: 입력 보안 가드레일
+from app.middleware.guardrails import InputSafetyGuardrail
 
 # Mission 07: 비동기 감사 로깅 (AgentLogTracer)
 from app.middleware.observability import AgentLogTracer
@@ -220,8 +219,8 @@ async def create_agent_executor(checkpointer=None):
         log_dir = logging_cfg.get("log_dir")
         middleware.append(AgentLogTracer(log_dir=log_dir) if log_dir else AgentLogTracer())
 
-    # (2) Guardrails — 프롬프트 인젝션 차단 + 오프토픽 질문 거부
-    #     fail_mode: 가드레일 LLM 장애 시 "open"(통과) / "close"(차단) — guardrail.config에서 가드별로 지정
+    # (2) Guardrails — 프롬프트 인젝션 차단
+    #     fail_mode: 가드레일 LLM 장애 시 "open"(통과) / "close"(차단) — guardrail.config에서 지정
     guardrail_cfg = _load_config("./configs/guardrail.config", {"guardrail_enabled": False})
     if guardrail_cfg.get("guardrail_enabled"):
         guard_model = model_cfg.get("model_name", "gemini-3.8-flash")
@@ -230,14 +229,6 @@ async def create_agent_executor(checkpointer=None):
             middleware.append(InputSafetyGuardrail(
                 model=guard_model,
                 fail_mode=safety_cfg.get("fail_mode", "open"),
-            ))
-        topic_cfg = guardrail_cfg.get("topic_alignment", {})
-        if topic_cfg.get("enabled", True):
-            middleware.append(TopicAlignmentGuardrail(
-                model=guard_model,
-                allowed_topics=topic_cfg.get("allowed_topics"),   # 미지정 시 기본 허용 도메인 사용
-                blocked_topics=topic_cfg.get("blocked_topics"),
-                fail_mode=topic_cfg.get("fail_mode", "open"),
             ))
 
     # (3) Memory & Prompt — 원문 기록·메모리 인출(before_agent, 가드레일 통과 후 실행) + 도구 필터링 → 5계층 프롬프트 조립

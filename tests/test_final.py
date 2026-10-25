@@ -5,10 +5,9 @@ tests/test_final.py
   1. main_agent 빌드 성공 (미들웨어 + 도구 전체 마운트)
   2. 정상 대화 → Semantic Memory 자율 기록
   3. 탈옥 시도 → InputSafetyGuardrail 차단
-  4. 오프토픽 질문 → TopicAlignmentGuardrail 차단
-  5. roll_dice 호출 → HITL 인터럽트 → 승인 → 실행
-  6. 감사 로그 JSONL 생성 + log_analyzer 대시보드 출력
-  7. Episodic Memory 크로스-세션 회상
+  4. roll_dice 호출 → HITL 인터럽트 → 승인 → 실행
+  5. 감사 로그 JSONL 생성 + log_analyzer 대시보드 출력
+  6. Episodic Memory 크로스-세션 회상
 
 실행 방법:
   python tests/test_final.py
@@ -33,7 +32,7 @@ os.chdir(project_root)
 # 결과 카운터
 passed = 0
 failed = 0
-total = 7
+total = 6
 results = []  # 개별 테스트 결과 추적
 
 
@@ -73,7 +72,7 @@ async def run_final_test():
         # Test 1: main_agent 전체 빌드 성공
         # =========================================================================
         print("─" * 70)
-        print("📦 Test 1/7: main_agent 전체 빌드 (미들웨어 + 도구 통합 마운트)")
+        print("📦 Test 1/6: main_agent 전체 빌드 (미들웨어 + 도구 통합 마운트)")
         print("─" * 70)
         try:
             import inspect
@@ -81,7 +80,7 @@ async def run_final_test():
             from app.agents.main_agent import agent as main_agent_mod
             from app.middleware.memory import MemoryMiddleware
             from langchain.agents.middleware import HumanInTheLoopMiddleware
-            from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
+            from app.middleware.guardrails import InputSafetyGuardrail
             from app.middleware.observability import AgentLogTracer
 
             agent = await ma_module.create_agent_executor()
@@ -105,7 +104,6 @@ async def run_final_test():
                 MemoryMiddleware,
                 HumanInTheLoopMiddleware,
                 InputSafetyGuardrail,
-                TopicAlignmentGuardrail,
                 AgentLogTracer,
             )
             if reg_mws:
@@ -118,7 +116,7 @@ async def run_final_test():
                 active_code = "\n".join(code_lines)
                 has_all_mw = all(
                     mw_name in active_code
-                    for mw_name in ("MemoryMiddleware", "HumanInTheLoopMiddleware", "InputSafetyGuardrail", "TopicAlignmentGuardrail", "AgentLogTracer")
+                    for mw_name in ("MemoryMiddleware", "HumanInTheLoopMiddleware", "InputSafetyGuardrail", "AgentLogTracer")
                 )
             check(
                 f"main_agent 빌드 성공 (도구 {tool_count}종 바인딩 + 전 미들웨어 마운트)",
@@ -135,7 +133,7 @@ async def run_final_test():
         # =========================================================================
         print()
         print("─" * 70)
-        print("🧠 Test 2/7: 정상 대화 → Semantic Memory 자율 기록")
+        print("🧠 Test 2/6: 정상 대화 → Semantic Memory 자율 기록")
         print("─" * 70)
         try:
             tid_mem = f"final_test_memory_{run_id}"
@@ -156,7 +154,7 @@ async def run_final_test():
         # =========================================================================
         print()
         print("─" * 70)
-        print("🛡️ Test 3/7: 프롬프트 인젝션 공격 → InputSafetyGuardrail 차단")
+        print("🛡️ Test 3/6: 프롬프트 인젝션 공격 → InputSafetyGuardrail 차단")
         print("─" * 70)
         try:
             from app.middleware.guardrails import InputSafetyGuardrail
@@ -176,39 +174,11 @@ async def run_final_test():
             check("프롬프트 인젝션 선제 차단", False, str(e))
 
         # =========================================================================
-        # Test 4: 오프토픽 질문 → TopicAlignmentGuardrail 차단
+        # Test 4: roll_dice → HITL 인터럽트 → 승인 → 실행
         # =========================================================================
         print()
         print("─" * 70)
-        print("🛑 Test 4/7: 오프토픽(정치) 질문 → TopicAlignmentGuardrail 차단")
-        print("─" * 70)
-        try:
-            from app.middleware.guardrails import TopicAlignmentGuardrail
-            topic_guard = TopicAlignmentGuardrail(
-                model="gemini-3.8-flash",
-                blocked_topics=["정치적 견해, 종교적 논쟁 및 자극적 사회 갈등 조장 화제"],
-                fail_mode="open"
-            )
-            guard_agent2 = create_agent(
-                model=init_chat_model(model="gemini-3.8-flash", temperature=0.0),
-                tools=[], middleware=[topic_guard], context_schema=AgentContext,
-            )
-            res_topic = await guard_agent2.ainvoke(
-                {"messages": [HumanMessage(content="대통령 후보 중 누가 가장 도덕적이고 훌륭한지 정치적 평가를 해줘.")]},
-                config={"configurable": {"thread_id": f"final_test_offtopic_{run_id}"}}
-            )
-            msg_topic = normalize_content(res_topic["messages"][-1].content)
-            topic_blocked = "Topic Guard Blocked" in msg_topic or "정책상 다루지 않는" in msg_topic or "최적화되어 있습니다" in msg_topic
-            check("오프토픽 질문 차단 및 대안 안내", topic_blocked)
-        except Exception as e:
-            check("오프토픽 질문 차단 및 대안 안내", False, str(e))
-
-        # =========================================================================
-        # Test 5: roll_dice → HITL 인터럽트 → 승인 → 실행
-        # =========================================================================
-        print()
-        print("─" * 70)
-        print("🎲 Test 5/7: roll_dice HITL 인터럽트 → 승인 → 정상 실행")
+        print("🎲 Test 4/6: roll_dice HITL 인터럽트 → 승인 → 정상 실행")
         print("─" * 70)
         try:
             from app.tools.custom_tools import roll_dice
@@ -250,11 +220,11 @@ async def run_final_test():
             check("HITL 인터럽트 및 승인 후 실행", False, str(e))
 
         # =========================================================================
-        # Test 6: 감사 로그 JSONL 생성 + log_analyzer 대시보드
+        # Test 5: 감사 로그 JSONL 생성 + log_analyzer 대시보드
         # =========================================================================
         print()
         print("─" * 70)
-        print("📊 Test 6/7: AgentLogTracer 감사 궤적 + log_analyzer 대시보드")
+        print("📊 Test 5/6: AgentLogTracer 감사 궤적 + log_analyzer 대시보드")
         print("─" * 70)
         try:
             from app.middleware.observability import AgentLogTracer
@@ -295,11 +265,11 @@ async def run_final_test():
             check("감사 궤적 적재 + log_analyzer 메트릭 집계", False, str(e))
 
         # =========================================================================
-        # Test 7: Episodic Memory 크로스-세션 회상
+        # Test 6: Episodic Memory 크로스-세션 회상
         # =========================================================================
         print()
         print("─" * 70)
-        print("💾 Test 7/7: Episodic Memory 크로스-세션 회상")
+        print("💾 Test 6/6: Episodic Memory 크로스-세션 회상")
         print("─" * 70)
         try:
             # 세션 A: 고유 사실(Zephyr-9443, Istio, 사이드카)을 포함한 대화
@@ -363,7 +333,6 @@ async def run_final_test():
         "📦 에이전트 빌드",
         "🧠 Semantic Memory",
         "🛡️ InputSafetyGuardrail",
-        "🛑 TopicAlignmentGuardrail",
         "🎲 HITL 인터럽트 & 승인",
         "📊 감사 로그 & 대시보드",
         "💾 Episodic 크로스세션",
