@@ -1,6 +1,6 @@
 # 🎯 Mission 05: Human-in-the-Loop (권한 제어 & 인터럽트 게이트)
 
-본 미션은 `6.Human_in_the_Loop.ipynb`에서 학습한 **도구 보안 등급제(Security Tiering)와 `HumanInTheLoopMiddleware`**를 바탕으로, 에이전트가 특정 도구를 실행하기 전 **사용자의 명시적 승인(Approve) / 거절(Reject)을 요구하는 권한 게이트(Permission Gate)**를 설정하고, **Chainlit 웹 UI에서 대화형 승인 팝업과 재개(Resume) 루프**를 검증하는 실습 과제입니다.
+본 미션은 `5.Human_in_the_Loop.ipynb`에서 학습한 **도구 보안 등급제(Security Tiering)와 `HumanInTheLoopMiddleware`**를 바탕으로, 에이전트가 특정 도구를 실행하기 전 **사용자의 명시적 승인(Approve) / 거절(Reject)을 요구하는 권한 게이트(Permission Gate)**를 설정하고, **Chainlit 웹 UI에서 대화형 승인 팝업과 재개(Resume) 루프**를 검증하는 실습 과제입니다.
 
 ---
 

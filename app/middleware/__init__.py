@@ -18,9 +18,12 @@
 from .observability.agent_log_tracer import AgentLogTracer, AgentTracer, LoggingMiddleware
 from .observability.visualizer import HierarchicalVisualizerMiddleware
 
-# --- Compaction (H-01, H-02) ---
-from .compaction.compactor import create_compactor_middleware
-from .compaction.amnesia_guard import AmnesiaGuardMiddleware, create_amnesia_guard_middleware
+# --- Compaction (H-01) ---
+from .compaction import (
+    HarnessSummarizationMiddleware,
+    ToolResultSwapMiddleware,
+    create_compaction_middleware,
+)
 
 # --- Error Control (H-03) ---
 from .error_control import (
@@ -61,9 +64,9 @@ __all__ = [
     "LoggingMiddleware",
     "HierarchicalVisualizerMiddleware",
     # Compaction
-    "create_compactor_middleware",
-    "AmnesiaGuardMiddleware",
-    "create_amnesia_guard_middleware",
+    "create_compaction_middleware",
+    "ToolResultSwapMiddleware",
+    "HarnessSummarizationMiddleware",
     # Error Control
     "StopHooksMiddleware",
     "ModelFallbackMiddleware",

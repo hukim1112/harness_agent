@@ -54,12 +54,11 @@ LANGCHAIN_PROJECT=harness_agent
 notebooks/
 ├── 0_Template.ipynb                       # 📝 하네스 기본 템플릿
 ├── 1.Reasoning and Subagent.ipynb         # 🤖 ReAct, Task Planning, 서브에이전트 오케스트레이션
-├── 2.Prompt_and_Memory.ipynb              # 🧠 5-Layer 프롬프트 조립 & 2-Stage JIT 계층형 메모리
-├── 3.Context_Compaction.ipynb             # 📦 컨텍스트 압축, 요약 및 장기 대화 윈도우 보존
-├── 4.Skills_and_MCP.ipynb                 # 🧰 Progressive Skills 동적 발견 & Model Context Protocol
-├── 5.Evaluation_and_LLM_as_Judge.ipynb    # ⚖️ LLM-as-a-Judge 정량 채점 & 회귀 테스트 자동화
-├── 6.Human_in_the_Loop.ipynb              # 🛑 도구 보안 등급제 & LangGraph __interrupt__ 권한 게이트
-└── 7.Guardrails_and_Monitoring.ipynb      # 🛡️ Llama Guard 3 입력 보안, NeMo 주제 일치, AgentLogTracer
+├── 2.Context_Engineering.ipynb            # 🧠 Context Engineering: 5-Layer 프롬프트 조립, 계층형 메모리, 컨텍스트 압축
+├── 3.Skills_and_MCP.ipynb                 # 🧰 Progressive Skills 동적 발견 & Model Context Protocol
+├── 4.Evaluation_and_LLM_as_Judge.ipynb    # ⚖️ LLM-as-a-Judge 정량 채점 & 회귀 테스트 자동화
+├── 5.Human_in_the_Loop.ipynb              # 🛑 도구 보안 등급제 & LangGraph __interrupt__ 권한 게이트
+└── 6.Guardrails_and_Monitoring.ipynb      # 🛡️ Llama Guard 3 입력 보안, NeMo 주제 일치, AgentLogTracer
 ```
 
 ---
@@ -128,6 +127,7 @@ python -m app.utils.log_analyzer
 | **`test_mission06.py`** | Mission 06 | Guardrails (입력 보안 필터 차단 & 주제 일치 리디렉션) | `python tests/test_mission06.py` |
 | **`test_mission07.py`** | Mission 07 | Logging (`AgentLogTracer` 비동기 적재 & `log_analyzer` 분석) | `python tests/test_mission07.py` |
 | **`test_final.py`** | Mission 08 | 전 과정 통합 졸업 검증 (7/7 E2E 하네스 검증) | `python tests/test_final.py` |
+| **`test_compaction.py`** | (노트북 2) | 대형 도구 결과 Swap & `SummarizationMiddleware` 요약 (`--live`: 실제 모델 검증 포함) | `python tests/test_compaction.py` |
 
 ---
 
@@ -135,7 +135,7 @@ python -m app.utils.log_analyzer
 
 ```text
 harness_agent/
-├── notebooks/              # 📗 단계별 핸즈온 실습 노트북 (0~7)
+├── notebooks/              # 📗 단계별 핸즈온 실습 노트북 (0~6)
 ├── missions/               # 🎯 단계별 프로덕션 미션 가이드 (00~08)
 ├── tests/                  # 🧪 미션별 1:1 매핑 자동화 검증 스크립트
 ├── configs/                # ⚙️ 런타임 하네스 설정 파일 모음
@@ -153,7 +153,7 @@ harness_agent/
 │   ├── middleware/         #   ├── 하네스 미들웨어 모음
 │   │   ├── memory/         #   │   └── 시맨틱/에피소딕 계층형 메모리 미들웨어
 │   │   ├── prompt/         #   │   └── Claude Code 5-Layer 프롬프트 조립기
-│   │   ├── compaction/     #   │   └── 5-Stage 컨텍스트 압축 & AmnesiaGuard
+│   │   ├── compaction/     #   │   └── 대형 도구 결과 Swap & SummarizationMiddleware 대화 요약
 │   │   ├── error_control/  #   │   └── 모델 폴백 / 서킷 브레이커 자가 복구 미들웨어
 │   │   ├── guardrails/     #   │   └── InputSafetyGuardrail & TopicAlignmentGuardrail
 │   │   └── observability/  #   │   └── AgentLogTracer 비동기 감사 로거 및 시각화기
@@ -190,6 +190,7 @@ harness_agent/
 | **웹 UI 프론트엔드** | Streamlit (`app/ui.py`) | **Chainlit (`app/chainlit_ui.py`, 포트 `8080`, SSE 스트리밍 & HITL 버튼 연동)** |
 | **프롬프트 아키텍처** | 단일 문자열 템플릿 | **Claude Code 표준 5-Layer Prompt Assembler (JIT Dynamic Assembly)** |
 | **메모리 시스템** | 단순 대화 체크포인터 | **2-Stage JIT 계층형 메모리 (Semantic Memory + Daemon Background Episodic Store)** |
+| **컨텍스트 압축** | 없음 | **대형 도구 결과 디스크 Swap (`ToolResultSwapMiddleware`) + LangChain `SummarizationMiddleware` 대화 요약** |
 | **도구 확장 메커니즘** | 정적 함수 바인딩 | **Progressive Skills (Frontmatter 경량 인덱싱 & 토큰 90% 절약형 동적 실행)** |
 | **권한 및 보안 제어** | 없음 (완전자율) | **Human-in-the-Loop (`__interrupt__` 기반 권한 게이트 & 웹 승인/거부 인터랙션)** |
 | **안전 거버넌스** | 없음 | **Llama Guard 3 S1~S5 입력 보안 필터 & NeMo 규정 일치 리디렉션 가드레일** |

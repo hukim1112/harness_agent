@@ -1,6 +1,6 @@
 # 🎯 Mission 06: Guardrails (안전 거버넌스 & 주제 정렬)
 
-본 미션은 `7.Guardrails_and_Monitoring.ipynb`에서 학습한 **엔터프라이즈 가드레일 거버넌스 원리(Llama Guard 3, OWASP Top 10 for LLM, NeMo Guardrails)**를 바탕으로, 에이전트가 악의적 공격(탈옥, 시스템 지침 탈취)이나 서비스 규정 외 오프토픽(정치, 비방)에 휘말리지 않도록 모델 호출 직전에 검열하고 친절한 대안(Actionable Redirection)을 제공하는 가드레일 파이프라인을 완성하고 검증하는 실습 과제입니다.
+본 미션은 `6.Guardrails_and_Monitoring.ipynb`에서 학습한 **엔터프라이즈 가드레일 거버넌스 원리(Llama Guard 3, OWASP Top 10 for LLM, NeMo Guardrails)**를 바탕으로, 에이전트가 악의적 공격(탈옥, 시스템 지침 탈취)이나 서비스 규정 외 오프토픽(정치, 비방)에 휘말리지 않도록 모델 호출 직전에 검열하고 친절한 대안(Actionable Redirection)을 제공하는 가드레일 파이프라인을 완성하고 검증하는 실습 과제입니다.
 
 ---
 

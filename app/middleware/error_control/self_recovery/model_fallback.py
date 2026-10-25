@@ -10,7 +10,7 @@
   Phase 3: 백업 모델도 실패 → 에이전트 크래시 대신 안전 메시지 반환
 
 참조:
-  - Claude Code: query.ts → model_error / reactive_compact_retry transition
+  - Claude Code: query.ts → model_error transition
   - 기존 agent_lab: ModelErrorHandlerMiddleware + ModelFallbackMiddleware (분리형)
   - 기존 harness_agent: retry_on_transient_error + dynamic_model_fallback (분리형)
 ===============================================================================
@@ -56,7 +56,8 @@ CONTEXT_OVERFLOW_KEYWORDS = (
 
 def _is_context_overflow(error: Exception) -> bool:
     """에러가 컨텍스트 길이 초과(413 / context_length_exceeded) 에러인지 판별합니다.
-    이 에러는 백업 모델 전환이나 안전 메시지로 삼키지 않고 상위의 CompactorMiddleware(ReactiveCompactor)로 전파합니다."""
+    같은 입력이면 백업 모델도 실패하므로 재시도·전환·안전 메시지로 삼키지 않고 호출자에게 그대로 전파합니다.
+    (컨텍스트 초과는 compaction 미들웨어의 요약·도구 결과 swap이 사전에 막는 것이 원칙입니다.)"""
     error_str = str(error).lower()
     return any(kw in error_str for kw in CONTEXT_OVERFLOW_KEYWORDS)
 
@@ -154,7 +155,7 @@ class ModelFallbackMiddleware(AgentMiddleware):
 
     # ---- Sync ----
     def wrap_model_call(self, request, handler):
-        """동기 모델 호출: Retry → Fallback → Safe Message 3단계 복구 (413은 Compactor로 전파)."""
+        """동기 모델 호출: Retry → Fallback → Safe Message 3단계 복구 (413은 그대로 전파)."""
         primary_error = None
 
         # Phase 1: 주 모델 재시도 (Exponential Backoff)
@@ -191,7 +192,7 @@ class ModelFallbackMiddleware(AgentMiddleware):
 
     # ---- Async ----
     async def awrap_model_call(self, request, handler):
-        """비동기 모델 호출: Retry → Fallback → Safe Message 3단계 복구 (413은 Compactor로 전파)."""
+        """비동기 모델 호출: Retry → Fallback → Safe Message 3단계 복구 (413은 그대로 전파)."""
         import asyncio
         primary_error = None
 
