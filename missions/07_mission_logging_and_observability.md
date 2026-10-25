@@ -98,7 +98,7 @@ from app.middleware.error_control.self_recovery import (
     ToolErrorHandlerMiddleware,
     ModelCallLimitMiddleware,
 )
-from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
+from app.middleware.guardrails import InputSafetyGuardrail
 from app.middleware.observability import AgentLogTracer
 
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
@@ -198,14 +198,6 @@ async def create_agent_executor(checkpointer=None):
             middleware.append(InputSafetyGuardrail(
                 model=guard_model,
                 fail_mode=safety_cfg.get("fail_mode", "open"),
-            ))
-        topic_cfg = guardrail_cfg.get("topic_alignment", {})
-        if topic_cfg.get("enabled", True):
-            middleware.append(TopicAlignmentGuardrail(
-                model=guard_model,
-                allowed_topics=topic_cfg.get("allowed_topics"),
-                blocked_topics=topic_cfg.get("blocked_topics"),
-                fail_mode=topic_cfg.get("fail_mode", "open"),
             ))
 
     # (3) Memory & Prompt

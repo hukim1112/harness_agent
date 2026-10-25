@@ -6,7 +6,7 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (�
 - Mission 03: 5계층 프롬프트 조립기 & 계층형 메모리(Semantic/Episodic) 결합
 - Mission 04: 전문 금융 스킬(10종) 카탈로그 동적 주입
 - Mission 05: Human-in-the-Loop 권한 승인 게이트 장착
-- Mission 06: 입력 보안 & 주제 정렬 가드레일 장착
+- Mission 06: 입력 보안 가드레일 장착
 - Mission 07: 비동기 JSONL 감사 로깅(AgentLogTracer) 장착
 """
 
@@ -78,7 +78,7 @@ async def create_agent_executor(checkpointer=None):
     #    - Mission 02: Self-Recovery 3종 (ModelFallback, ToolErrorHandler, ModelCallLimit)
     #    - Mission 03: MemoryMiddleware, PromptAssemblerMiddleware
     #    - Mission 05: HumanInTheLoopMiddleware (configs/hitl.config)
-    #    - Mission 06: InputSafetyGuardrail, TopicAlignmentGuardrail (configs/guardrail.config)
+    #    - Mission 06: InputSafetyGuardrail (configs/guardrail.config)
     #    - Mission 07: AgentLogTracer (configs/logging.config)
     #    ※ 전체 순서는 missions/MIDDLEWARE_PIPELINE_REFERENCE.md 참고:
     #       [1.Logging] -> [2.Guardrails] -> [3.Memory & Prompt] -> [4.HITL] -> [5.Self-Recovery]

@@ -73,9 +73,9 @@ missions/
 ├── 03_mission_prompt_and_memory.md         # 🧠 Claude Code 프롬프트 조립기 & 백그라운드 에피소딕 메모리
 ├── 04_mission_skills.md                    # 🧰 금융 분석 전문 스킬(12종) 동적 카탈로그 주입 & 대시보드
 ├── 05_mission_human_in_the_loop.md         # 🛑 roll_dice 타깃 HITL 권한 게이트 & 웹 대화형 승인/거절
-├── 06_mission_guardrails.md                # 🛡️ 프롬프트 인젝션(S4) 선제 차단 & 오프토픽 대체 안내
+├── 06_mission_guardrails.md                # 🛡️ 프롬프트 인젝션(S4)·탈옥 시도 선제 차단
 ├── 07_mission_logging_and_observability.md # 📊 비동기 감사 궤적 적재 & 세션 데이터 분석 대시보드
-├── 08_mission_final_integration_test.md    # 🎓 전 과정 통합 졸업 검증 (7/7 E2E 테스트)
+├── 08_mission_final_integration_test.md    # 🎓 전 과정 통합 졸업 검증 (6/6 E2E 테스트)
 └── MIDDLEWARE_PIPELINE_REFERENCE.md        # 📐 통합 미들웨어 파이프라인 실행 순서 레퍼런스
 ```
 
@@ -124,9 +124,9 @@ python -m app.utils.log_analyzer
 | **`test_mission03.py`** | Mission 03 | 5-Layer 프롬프트 조립 & 메모리 + **실물 시각화** | `python tests/test_mission03.py` |
 | **`test_mission04.py`** | Mission 04 | `main_agent/skills/` 동적 확장 & Layer 2.2 자동 주입 + **실물 시각화** | `python tests/test_mission04.py` |
 | **`test_mission05.py`** | Mission 05 | HITL (`roll_dice` 타깃 권한 게이트 & 승인/거부 재개) | `python tests/test_mission05.py` |
-| **`test_mission06.py`** | Mission 06 | Guardrails (입력 보안 필터 차단 & 주제 일치 리디렉션) | `python tests/test_mission06.py` |
+| **`test_mission06.py`** | Mission 06 | Guardrails (입력 보안 필터 — 프롬프트 인젝션·탈옥 차단) | `python tests/test_mission06.py` |
 | **`test_mission07.py`** | Mission 07 | Logging (`AgentLogTracer` 비동기 적재 & `log_analyzer` 분석) | `python tests/test_mission07.py` |
-| **`test_final.py`** | Mission 08 | 전 과정 통합 졸업 검증 (7/7 E2E 하네스 검증) | `python tests/test_final.py` |
+| **`test_final.py`** | Mission 08 | 전 과정 통합 졸업 검증 (6/6 E2E 하네스 검증) | `python tests/test_final.py` |
 | **`test_compaction.py`** | (노트북 2) | 대형 도구 결과 Swap & `SummarizationMiddleware` 요약 (`--live`: 실제 모델 검증 포함) | `python tests/test_compaction.py` |
 
 ---
