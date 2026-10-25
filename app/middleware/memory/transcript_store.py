@@ -56,7 +56,7 @@ from app.utils.message_markers import (
 logger = logging.getLogger(__name__)
 
 # ── 다른 미들웨어와 공유하는 메시지 마커 (additional_kwargs 키) ──
-# TRANSCRIPT_SKIP_KEY: Compactor가 state에 넣는 요약/복원 메시지 — 원문에는 record_compaction()으로 따로 기록
+# TRANSCRIPT_SKIP_KEY: 요약 미들웨어가 state에 넣는 요약 메시지 — 원문에는 record_compaction()으로 따로 기록
 # 가드레일이 차단 응답에 붙이는 표시: 차단된 질문·응답을 kind=blocked로 기록
 GUARDRAIL_BLOCKED_KEY = "guardrail_blocked"
 
