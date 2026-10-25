@@ -19,7 +19,7 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (In
    - L4 Recalled Memory         ← Semantic 스냅샷 + Episodic 과거 세션 요약 힌트
    - L5 Project Rules            ← AGENT.md / CLAUDE.md (현재 미지정)
 3. 계층형 메모리 (Layered Memory & Dual-Tier Session Data):
-   - L1 단기 기억  : AsyncSqliteSaver (세션별 체크포인터 — AutoCompactor가 압축 교체)
+   - L1 단기 기억  : AsyncSqliteSaver (세션별 체크포인터 — SummarizationMiddleware가 이전 대화를 요약본으로 교체)
    - L2 에피소드 원문: TranscriptStore (transcript.db — 대화·도구 호출/결과 실시간 Append-only 백업)
    - L2 에피소드 색인: EpisodicStore (episodic.db — 다중 주제 요약·키워드 SQLite FTS5 + session_recall JIT 인출)
    - L3 시맨틱 기억 : SemanticMemoryStore (USER.md / MEMORY.md + memory 도구)
@@ -37,7 +37,8 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (In
      [3] TopicAlignmentGuardrail   ← before_agent: 오프토픽 질문 차단 & 대안 안내 (jump_to="end")
      [4] MemoryMiddleware          ← before_agent(원문 기록 & L2/L3 메모리 인출) + wrap_model/tool(원문 기록 & 도구 필터링) + after_agent(유휴 리뷰 예약)
      [5] PromptAssemblerMiddleware ← wrap_model_call: 5계층 시스템 프롬프트 조립
-     [6] CompactorMiddleware       ← before_model(AutoCompactor state 교체) + wrap_model_call(Snip/Micro/Collapse + 413 Reactive)
+     [6] Compaction                ← ToolResultSwapMiddleware(wrap_tool_call: 대형 도구 결과 디스크 Swap)
+                                    + SummarizationMiddleware(before_model: trigger 초과 시 이전 대화 요약)
      [7] HumanInTheLoopMiddleware  ← 도구 실행 직전 사용자 승인 요청
      [8] ModelFallbackMiddleware   ← 모델 호출 실패 시 백업 모델로 재시도
      [9] ToolErrorHandlerMiddleware← 도구 실행 오류 시 에러 메시지로 변환
@@ -80,11 +81,8 @@ from app.middleware.error_control.self_recovery import (
 )
 from app.middleware.error_control.self_correction import StopHooksMiddleware
 
-# Claude Code 5-Stage Compaction & Amnesia Guard
-from app.middleware.compaction import (
-    AmnesiaGuardMiddleware,
-    create_compactor_middleware,
-)
+# Context Compaction: 대형 도구 결과 Swap + SummarizationMiddleware
+from app.middleware.compaction import create_compaction_middleware
 
 # Mission 06: 입력 보안 & 주제 정렬 가드레일
 from app.middleware.guardrails import InputSafetyGuardrail, TopicAlignmentGuardrail
@@ -245,28 +243,25 @@ async def create_agent_executor(checkpointer=None):
     # (3) Memory & Prompt — 원문 기록·메모리 인출(before_agent, 가드레일 통과 후 실행) + 도구 필터링 → 5계층 프롬프트 조립
     middleware.extend([memory_mw, prompt_mw])
 
-    # (3-1) Context Compaction & Amnesia Guard (configs/compaction.config)
+    # (3-1) Context Compaction (configs/compaction.config)
+    #       - 대형 도구 결과 → 디스크 Swap (swap_dir 미지정: artifacts/users/{user_id}/sessions/{session_id}/tool-results/)
+    #       - 대화가 trigger_tokens를 넘으면 이전 대화를 요약
+    #         trigger는 시스템 프롬프트·도구 스키마를 포함한 실사용량과도 비교됩니다.
+    #         이 에이전트의 고정 오버헤드가 약 11K 토큰이므로 trigger는 그보다 넉넉히 크게 둡니다.
     compaction_cfg = _load_config("./configs/compaction.config", {"compaction_enabled": False})
     if compaction_cfg.get("compaction_enabled"):
-        ag_cfg = compaction_cfg.get("amnesia_guard", {})
-        amnesia_guard = None
-        if ag_cfg.get("enabled", True):
-            amnesia_guard = AmnesiaGuardMiddleware(
-                max_restore_files=ag_cfg.get("max_restore_files", 5),
-            )
-            middleware.append(amnesia_guard)
-        auto_cfg = compaction_cfg.get("auto", {})
-        micro_cfg = compaction_cfg.get("micro", {})
-        middleware.append(
-            create_compactor_middleware(
-                llm=llm,
-                threshold_tokens=auto_cfg.get("threshold_tokens", 8000),
-                amnesia_guard=amnesia_guard,
-                swap_dir=micro_cfg.get("swap_dir", "./artifacts/swaps"),
-                # 원문 기록이 꺼져 있으면 압축 이벤트도 transcript.db에 남기지 않음
-                transcript_store=transcript_store if tr_cfg.get("enabled", True) else None,
-            )
-        )
+        swap_cfg = compaction_cfg.get("tool_result_swap", {})
+        summ_cfg = compaction_cfg.get("summarization", {})
+        middleware.extend(create_compaction_middleware(
+            llm,
+            trigger_tokens=summ_cfg.get("trigger_tokens", 24_000),
+            keep_tokens=summ_cfg.get("keep_tokens", 6_000),
+            swap_dir=swap_cfg.get("swap_dir"),
+            max_result_chars=swap_cfg.get("max_result_chars", 10_000),
+            preview_chars=swap_cfg.get("preview_chars", 2_000),
+            # 원문 기록이 꺼져 있으면 압축 이벤트도 transcript.db에 남기지 않음
+            transcript_store=transcript_store if tr_cfg.get("enabled", True) else None,
+        ))
 
     # (4) Human-in-the-Loop — 지정 도구(roll_dice) 실행 전 사용자 승인 게이트
     hitl_cfg = _load_config("./configs/hitl.config", {"hitl_enabled": False})
