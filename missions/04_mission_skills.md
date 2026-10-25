@@ -1,6 +1,6 @@
 # 🎯 Mission 04: Progressive Skills 기반 금융 분석 & 인터랙티브 대시보드 시각화
 
-본 미션은 `4.Skills_and_MCP.ipynb`에서 학습한 **Progressive Skill Execution (점진적 스킬 공개)** 원리를 바탕으로, 교육생 여러분이 에이전트 코드를 한 줄도 수정하지 않고도 `main_agent`의 내장 스킬 폴더(`app/agents/main_agent/skills/`)를 확장하여 **`main_agent`를 전문 금융 분석 에이전트로 즉각 진화**시키고, **실시간 금융 데이터 수집 및 인터랙티브 HTML 대시보드(Chart.js) 시각화**를 완성하는 실습 과제입니다.
+본 미션은 `3.Skills_and_MCP.ipynb`에서 학습한 **Progressive Skill Execution (점진적 스킬 공개)** 원리를 바탕으로, 교육생 여러분이 에이전트 코드를 한 줄도 수정하지 않고도 `main_agent`의 내장 스킬 폴더(`app/agents/main_agent/skills/`)를 확장하여 **`main_agent`를 전문 금융 분석 에이전트로 즉각 진화**시키고, **실시간 금융 데이터 수집 및 인터랙티브 HTML 대시보드(Chart.js) 시각화**를 완성하는 실습 과제입니다.
 
 ---
 

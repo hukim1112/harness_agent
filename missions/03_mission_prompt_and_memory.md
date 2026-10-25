@@ -61,7 +61,7 @@ graph TD
 
 | 계층 | 기억 종류 | 저장 매체 | 수명 (Lifecycle) | 주요 역할 |
 | :--- | :--- | :--- | :--- | :--- |
-| **L1** | 단기 기억 (Working) | `AsyncSqliteSaver` (Checkpointer) | 현재 세션/대화 스레드 | 모델 입력용 컨텍스트 유지 (`AutoCompactor`가 `before_model`에서 요약본으로 압축 교체) |
+| **L1** | 단기 기억 (Working) | `AsyncSqliteSaver` (Checkpointer) | 현재 세션/대화 스레드 | 모델 입력용 컨텍스트 유지 (`SummarizationMiddleware`가 `before_model`에서 이전 대화를 요약본으로 교체) |
 | **L2 (원문)** | 에피소드 원문 (Transcript) | `TranscriptStore` (`transcript.db`) | 영구 보관 (Append-only) | 사용자 질문·AI 응답·도구 호출(`tool_calls`)·도구 결과를 실시간 무손실 백업 |
 | **L2 (색인)** | 에피소드 색인 (Episodic Index) | `EpisodicStore` (`episodic.db` FTS5) | 영구 보관 (세션 간) | 다중 주제(Multi-topic) 요약·키워드·사용 도구 색인 및 2-Stage JIT 회상 |
 | **L3** | 시맨틱 기억 (Semantic) | `USER.md` / `MEMORY.md` (`§` 분리) | 영구 보관 (파일 기반) | 사용자 성향, 환경 팩트, 프로젝트 컨벤션 영구 기록 |
@@ -73,7 +73,7 @@ graph TD
 
 1. **실시간 원문 백업 (`TranscriptStore` — `transcript.db`)**:
    - `MemoryMiddleware`가 `before_agent`(사용자 질문), `wrap_model_call`(AI 응답 및 도구 호출 인자), `wrap_tool_call`(도구 실행 결과) 시점마다 `transcript.db`에 멱등(Append-only) 기록합니다.
-   - `AutoCompactor`가 `before_model`에서 모델 컨텍스트(`state["messages"]`)를 압축 교체하더라도 `transcript.db`의 원문과 도구 기록은 100% 보존됩니다.
+   - `SummarizationMiddleware`가 `before_model`에서 모델 컨텍스트(`state["messages"]`)를 요약본으로 교체하더라도 `transcript.db`의 원문과 도구 기록은 100% 보존됩니다.
 2. **유휴 지연 요약 인덱싱 (`IdleReviewQueue` + `finalize_session`)**:
    - 매 턴 종료 즉시 무거운 LLM 요약을 실행하는 대신, `IdleReviewQueue`에 예약하여 **마지막 턴 종료 후 15초 동안 추가 입력이 없거나(유휴), 연속 대화 시 최초 예약 후 30분이 경과했을 때** 백그라운드 스레드에서 실행합니다 (사용자 복귀 시 대기 중인 리뷰는 즉시 취소).
    - `transcript.db`의 전체 원문을 읽어 [1단계: 로컬 단어 추출] + [2단계: LLM 다중 주제(Topics) 요약 및 한/영 키워드 추출]을 거쳐 `episodic.db`(FTS5)에 색인합니다.
