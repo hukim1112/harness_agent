@@ -235,8 +235,8 @@ python tests/test_mission02.py
   엔비디아와 관련한 최신 소식들을 조사하고 싶어. 계획을 먼저 수립해줘. 그리고 조사 작업을 수행해줘.
   ```
 * **관찰 포인트**:
-  - `enter_plan` 및 `task_create` 도구가 호출되어 세션별 상태 칠판(`task_state.json`)에 체계적인 조사 단계(정보 검색 ➔ 주요 이슈 분류 ➔ 요약 보고)를 수립합니다.
-  - `web_search` 도구를 스스로 실행하여 최신 엔비디아 실적, 신제품(블랙웰 GPU 등), AI 인프라 동향을 수집하고 단계별로 `task_update`를 거쳐 `exit_plan`으로 마무리한 뒤 브리핑합니다.
+  - `enter_plan(intent="new", goal=...)`로 계획 모드에 진입한 뒤 `exit_plan(plan_name, steps)`으로 실행 단계를 확정(`plan_state.json`)하고, `task_create` 도구가 호출되어 세션별 상태 칠판(`task_state.json`)에 체계적인 조사 단계(정보 검색 ➔ 주요 이슈 분류 ➔ 요약 보고)를 등록합니다.
+  - `web_search` 도구를 스스로 실행하여 최신 엔비디아 실적, 신제품(블랙웰 GPU 등), AI 인프라 동향을 수집하고 단계별로 `task_update(..., "COMPLETED")`를 호출해 모든 과제를 완료한 뒤 브리핑합니다.
 
 #### 🧪 시나리오 ②: 서브에이전트 목록 확인 및 Analyst 카드뉴스 시각화 위임
 * **사용자 입력**:
