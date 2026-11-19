@@ -159,7 +159,7 @@ python tests/test_mission01.py
 ```text
 ✅ Test 1 통과: custom_tools.py 도구 정의 확인 (roll_dice, convert_currency)
 ✅ Test 2 통과: 각 도구의 단위 실행 및 결과 반환 확인
-✅ Test 3 통과: chatbot 에이전트에 커스텀 도구 바인딩 확인 (총 12종)
+✅ Test 3 통과: chatbot 에이전트에 커스텀 도구 바인딩 확인 (총 11종)
 🎉 [Mission 01] 커스텀 도구 구현 및 챗봇 결합 검증 100% 통과!
 ```
 
