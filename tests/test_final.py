@@ -120,7 +120,7 @@ async def run_final_test():
                 )
             check(
                 f"main_agent 빌드 성공 (도구 {tool_count}종 바인딩 + 전 미들웨어 마운트)",
-                agent is not None and tool_count >= 19 and has_all_mw,
+                agent is not None and tool_count >= 20 and has_all_mw,
                 "configs/hitl.config, guardrail.config, logging.config가 모두 true인지 및 미들웨어 마운트를 확인하세요."
             )
         except Exception as e:
