@@ -109,7 +109,7 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `A
    ```python
    active_tools = list(tools_supervisor)
    ```
-   > 💡 `tools_supervisor`에는 계획 수립 도구 5종(`enter_plan`, `task_create` 등), 서브에이전트 오케스트레이션 도구 3종(`list_sub_agents`, `invoke_sub_agent`, `get_sub_agent_job_status`), 공통 파일/검색 도구 7종을 합쳐 **총 15종**이 통합되어 있습니다.
+   > 💡 `tools_supervisor`에는 계획 수립 도구 5종(`enter_plan`, `task_create` 등), 서브에이전트 오케스트레이션 도구 3종(`list_sub_agents`, `invoke_sub_agent`, `get_sub_agent_job_status`), 공통 범용 도구 8종을 합쳐 **총 16종**이 통합되어 있습니다.
 
 <details>
 <summary><b>👉 완성된 <code>app/agents/main_agent/agent.py</code> 전체 코드 (Mission 02 시점 참고용)</b></summary>
