@@ -75,30 +75,23 @@ async def run_final_test():
         print("📦 Test 1/6: main_agent 전체 빌드 (미들웨어 + 도구 통합 마운트)")
         print("─" * 70)
         try:
-            import inspect
             from app.agents import main_agent as ma_module
-            from app.agents.main_agent import agent as main_agent_mod
             from app.middleware.memory import MemoryMiddleware
             from langchain.agents.middleware import HumanInTheLoopMiddleware
             from app.middleware.guardrails import InputSafetyGuardrail
             from app.middleware.observability import AgentLogTracer
+            from tests.agent_inspector import (
+                extract_agent_middlewares,
+                extract_agent_tools,
+                find_agent_middleware,
+            )
 
             agent = await ma_module.create_agent_executor()
-            all_tools = []
-            if hasattr(agent, "nodes") and "tools" in agent.nodes:
-                tools_node = agent.nodes["tools"]
-                bound_node = getattr(tools_node, "bound", tools_node)
-                if hasattr(bound_node, "tools_by_name"):
-                    all_tools = list(bound_node.tools_by_name.values())
-            if not all_tools:
-                all_tools = list(getattr(agent, "registered_tools", []))
+            all_tools = extract_agent_tools(agent)
             tool_count = len(all_tools)
 
-            reg_mws = getattr(agent, "registered_middlewares", [])
-            for m in reg_mws:
-                if isinstance(m, MemoryMiddleware):
-                    memory_mw = m
-                    break
+            reg_mws = extract_agent_middlewares(agent)
+            memory_mw = find_agent_middleware(agent, MemoryMiddleware)
 
             required_mw_types = (
                 MemoryMiddleware,
@@ -106,18 +99,7 @@ async def run_final_test():
                 InputSafetyGuardrail,
                 AgentLogTracer,
             )
-            if reg_mws:
-                has_all_mw = all(any(isinstance(m, req_t) for m in reg_mws) for req_t in required_mw_types)
-            else:
-                code_lines = [
-                    line for line in inspect.getsource(main_agent_mod.create_agent_executor).splitlines()
-                    if not line.strip().startswith("#")
-                ]
-                active_code = "\n".join(code_lines)
-                has_all_mw = all(
-                    mw_name in active_code
-                    for mw_name in ("MemoryMiddleware", "HumanInTheLoopMiddleware", "InputSafetyGuardrail", "AgentLogTracer")
-                )
+            has_all_mw = all(any(isinstance(m, req_t) for m in reg_mws) for req_t in required_mw_types)
             check(
                 f"main_agent 빌드 성공 (도구 {tool_count}종 바인딩 + 전 미들웨어 마운트)",
                 agent is not None and tool_count >= 20 and has_all_mw,
@@ -308,11 +290,12 @@ async def run_final_test():
 
     finally:
         # 테스트 리소스 및 임시 아티팩트 정리
-        try:
-            if memory_mw is not None:
-                await asyncio.to_thread(memory_mw.wait_for_reviews, 5.0)
-        except Exception:
-            pass
+        if agent is not None:
+            try:
+                from tests.agent_inspector import close_agent_resources
+                await close_agent_resources(agent, review_timeout=5.0)
+            except Exception:
+                pass
         try:
             from app.middleware.observability.agent_log_tracer import _GLOBAL_LOG_WORKER
             _GLOBAL_LOG_WORKER.flush()
@@ -320,11 +303,6 @@ async def run_final_test():
             pass
         shutil.rmtree(os.path.join(project_root, "artifacts", "users", test_uid), ignore_errors=True)
         shutil.rmtree(test_log_dir, ignore_errors=True)
-        if agent is not None:
-            if getattr(agent, "checkpointer_conn", None):
-                await agent.checkpointer_conn.close()
-            if getattr(agent, "episodic_store", None):
-                await agent.episodic_store.close()
 
     # =========================================================================
     # 최종 결과

@@ -134,7 +134,6 @@ async def create_agent_executor(checkpointer=None):
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = None
     if checkpointer is None:
         conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
         await conn.execute("PRAGMA journal_mode=WAL;")
@@ -221,23 +220,13 @@ async def create_agent_executor(checkpointer=None):
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
     ])
 
-    main_agent = create_agent(
+    return create_agent(
         model=llm,
         tools=active_tools,
         middleware=middleware,
         checkpointer=checkpointer,
         context_schema=AgentContext,
     )
-
-    main_agent.registered_tools = active_tools
-    main_agent.registered_middlewares = middleware
-    main_agent.checkpointer_conn = conn
-    main_agent.episodic_store = episodic_store
-    main_agent.semantic_store = semantic_store
-    main_agent.assembler = assembler
-    main_agent.memory_middleware = memory_mw
-
-    return main_agent
 ```
 </details>
 

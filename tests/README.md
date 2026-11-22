@@ -17,7 +17,7 @@
 | **`tests/test_mission05.py`** | Mission 05 | Human-in-the-Loop (`roll_dice` 타깃 권한 게이트 & 승인/거절 재개) | `python tests/test_mission05.py` |
 | **`tests/test_mission06.py`** | Mission 06 | Guardrails (입력 보안 필터 — 프롬프트 인젝션·탈옥 선제 차단) | `python tests/test_mission06.py` |
 | **`tests/test_mission07.py`** | Mission 07 | Logging & Observability (`AgentLogTracer` 감사 궤적 적재 & 세션 통계 분석) | `python tests/test_mission07.py` |
-| **`tests/test_final.py`** | 최종 통합 | 전 하네스(도구 20종 + 메모리 + 가드레일 + HITL + 감사 로깅) E2E 졸업 검증 | `python tests/test_final.py` |
+| **`tests/test_final.py`** | 최종 통합 | 전 하네스(도구 21종 + 메모리 + 가드레일 + HITL + 감사 로깅) E2E 졸업 검증 | `python tests/test_final.py` |
 
 ---
 

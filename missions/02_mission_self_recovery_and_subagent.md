@@ -109,7 +109,7 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `A
    ```python
    active_tools = list(tools_supervisor)
    ```
-   > 💡 `tools_supervisor`에는 계획 수립 도구 5종(`enter_plan`, `task_create` 등), 서브에이전트 오케스트레이션 도구 3종(`list_sub_agents`, `invoke_sub_agent`, `get_sub_agent_job_status`), 공통 범용 도구 8종을 합쳐 **총 16종**이 통합되어 있습니다.
+   > 💡 `tools_supervisor`에는 계획 수립 도구 5종(`enter_plan`, `task_create` 등), 서브에이전트 오케스트레이션 도구 4종(`list_sub_agents`, `invoke_sub_agent`, `get_sub_agent_job_status`, `cancel_sub_agent_job`), 공통 범용 도구 8종을 합쳐 **총 17종**이 통합되어 있습니다.
 
 <details>
 <summary><b>👉 완성된 <code>app/agents/main_agent/agent.py</code> 전체 코드 (Mission 02 시점 참고용)</b></summary>
@@ -165,7 +165,6 @@ async def create_agent_executor(checkpointer=None):
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = None
     if checkpointer is None:
         conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
         await conn.execute("PRAGMA journal_mode=WAL;")
@@ -191,7 +190,7 @@ async def create_agent_executor(checkpointer=None):
         ModelCallLimitMiddleware(run_limit=50, exit_behavior="end"),
     ])
 
-    main_agent = create_agent(
+    return create_agent(
         model=llm,
         tools=active_tools,
         system_prompt=SUPERVISOR_SYSTEM_PROMPT,
@@ -199,11 +198,6 @@ async def create_agent_executor(checkpointer=None):
         checkpointer=checkpointer,
         context_schema=AgentContext,
     )
-
-    main_agent.registered_tools = active_tools
-    main_agent.registered_middlewares = middleware
-    main_agent.checkpointer_conn = conn
-    return main_agent
 ```
 </details>
 

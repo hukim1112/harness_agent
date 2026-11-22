@@ -73,29 +73,24 @@ async def run_mission04_test():
 
     # 3. main_agent 생성 및 5-Layer 프롬프트의 Layer 2.2 주입 검증
     from app.agents import main_agent
+    from tests.agent_inspector import (
+        close_agent_resources,
+        extract_agent_tools,
+        extract_prompt_assembler,
+    )
 
     agent = await main_agent.create_agent_executor()
     assert agent is not None, "❌ main_agent 생성 실패"
 
     # 프롬프트 조립기에서 static content(L1~L2) 생성 → Layer 2.2에 금융 스킬이 주입되었는지 확인
-    assembler = getattr(agent, "assembler", None)
-    if assembler:
-        static_prompt = assembler.build_static_content()
-        for s in REQUIRED_FINANCIAL_SKILLS:
-            assert s in static_prompt, f"❌ main_agent Layer 2.2 카탈로그에 '{s}' 스킬이 주입되지 않았습니다."
-    else:
-        # main_agent/agent.py 내부에서 assembler 사용 여부 확인
-        import inspect
-        source = inspect.getsource(main_agent.create_agent_executor)
-        assert "PromptAssembler" in source, "❌ main_agent/agent.py에 PromptAssembler가 사용되지 않았습니다."
-        assert "SkillPromptBuilder" in source, "❌ main_agent/agent.py에 SkillPromptBuilder가 사용되지 않았습니다."
+    assembler = extract_prompt_assembler(agent)
+    assert assembler is not None, "❌ main_agent에 PromptAssembler가 탑재되지 않았습니다."
+    static_prompt = assembler.build_static_content()
+    for s in REQUIRED_FINANCIAL_SKILLS:
+        assert s in static_prompt, f"❌ main_agent Layer 2.2 카탈로그에 '{s}' 스킬이 주입되지 않았습니다."
 
     # 4. Progressive Skill 실행 필수 도구 확인 (file_read, bash_command)
-    tools = getattr(agent, "registered_tools", [])
-    if not tools and hasattr(agent, "nodes"):
-        tools_node = agent.nodes.get("tools")
-        if tools_node and hasattr(tools_node, "tools_by_name"):
-            tools = list(tools_node.tools_by_name.values())
+    tools = extract_agent_tools(agent)
 
     tool_names = {getattr(t, "name", "") for t in tools}
     assert "file_read" in tool_names, (
@@ -109,9 +104,7 @@ async def run_mission04_test():
     print("  ✅ Test 3 통과: Progressive Skill 실행 필수 도구 바인딩 확인 (file_read, bash_command)")
 
     # 5. 리소스 정리
-    conn = getattr(agent, "checkpointer_conn", None)
-    if conn:
-        await conn.close()
+    await close_agent_resources(agent)
 
     # 6. 실물 시각화 출력
     print("\n" + "=" * 70)

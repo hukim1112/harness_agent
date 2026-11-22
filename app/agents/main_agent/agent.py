@@ -7,7 +7,7 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (In
   app/agents/main_agent/
    ├── agent.py       (에이전트 조립 및 9단계 미들웨어 파이프라인)
    ├── prompt.py      (SUPERVISOR_SYSTEM_PROMPT — PromptAssembler의 Layer 1)
-   ├── tools.py       (계획 5종 + 오케스트레이션 3종 + 공통 8종 = 16종 도구 바인딩)
+   ├── tools.py       (계획 5종 + 오케스트레이션 4종 + 공통 8종 = 17종 도구 바인딩)
    └── skills/        (에이전트 내재화 스킬 — Layer 2.2 카탈로그로 노출)
 
 [하네스 구성 요소]
@@ -28,7 +28,7 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (In
    - ToolErrorHandlerMiddleware : 도구 예외 시 ToolMessage(Observation)로 변환
    - ModelCallLimitMiddleware   : 무한 루프 차단 (run_limit=50)
    - StopHooksMiddleware        : 생성된 Python 코드블록 AST 구문 검증 및 자가 교정 루프
-5. 도구: tools_supervisor(16종) + memory_tools(2종) + custom_tools(2종) = 총 20종
+5. 도구: tools_supervisor(17종) + memory_tools(2종) + custom_tools(2종) = 총 21종
 
 [미들웨어 파이프라인 실행 순서]
    사용자 요청 →
@@ -126,7 +126,6 @@ async def create_agent_executor(checkpointer=None):
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = None
     if checkpointer is None:
         conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
         await conn.execute("PRAGMA journal_mode=WAL;")
@@ -134,7 +133,7 @@ async def create_agent_executor(checkpointer=None):
         checkpointer = AsyncSqliteSaver(conn)
         await checkpointer.setup()
 
-    # 4. 도구 바인딩 (Supervisor 16종 + Custom 2종 = 18종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 20종)
+    # 4. 도구 바인딩 (Supervisor 17종 + Custom 2종 = 19종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 21종)
     #    ※ PromptAssembler(tool_schemas=active_tools)에서 참조하므로 먼저 선언합니다.
     active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
 
@@ -274,23 +273,11 @@ async def create_agent_executor(checkpointer=None):
     ])
 
     # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
-    main_agent = create_agent(
+    return create_agent(
         model=llm,
         tools=active_tools,
         middleware=middleware,
         checkpointer=checkpointer,
         context_schema=AgentContext,
     )
-
-    # 리소스 정리 및 검증용 참조 보존 (테스트 스크립트에서 접근)
-    main_agent.registered_tools = active_tools
-    main_agent.registered_middlewares = middleware
-    main_agent.checkpointer_conn = conn
-    main_agent.transcript_store = transcript_store
-    main_agent.episodic_store = episodic_store
-    main_agent.semantic_store = semantic_store
-    main_agent.assembler = assembler
-    main_agent.memory_middleware = memory_mw
-
-    return main_agent
 

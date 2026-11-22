@@ -181,7 +181,7 @@ from app.middleware.prompt import (
 그리고 Mission 02에서 작성한 **기존 `# 4. 도구 바인딩` 줄을 아래와 같이 수정**합니다. (`active_tools`를 새로 한 번 더 선언하지 말고, 기존 줄에 커스텀 도구 2종만 추가합니다.)
 
 ```python
-    # 4. 도구 바인딩 (Supervisor 16종 + Custom 2종 = 18종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 20종)
+    # 4. 도구 바인딩 (Supervisor 17종 + Custom 2종 = 19종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 21종)
     active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
 ```
 
@@ -236,29 +236,18 @@ from app.middleware.prompt import (
 
 ---
 
-### 6단계: create_agent 수정 및 인스턴스 참조 보존
-`create_agent` 호출 시 `system_prompt` 인자를 제거하고(PromptAssemblerMiddleware가 런타임에 주입), 테스트 검증용 참조 속성들을 보존합니다:
+### 6단계: create_agent 수정
+`PromptAssemblerMiddleware`가 런타임에 5계층 프롬프트를 조립해 주입하므로 `create_agent` 호출에서 고정 `system_prompt` 인자를 제거합니다:
 
 ```python
     # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
-    main_agent = create_agent(
+    return create_agent(
         model=llm,
         tools=active_tools,
         middleware=middleware,
         checkpointer=checkpointer,
         context_schema=AgentContext,
     )
-
-    # 리소스 정리 및 검증용 참조 보존
-    main_agent.registered_tools = active_tools
-    main_agent.registered_middlewares = middleware
-    main_agent.checkpointer_conn = conn
-    main_agent.episodic_store = episodic_store
-    main_agent.semantic_store = semantic_store
-    main_agent.assembler = assembler
-    main_agent.memory_middleware = memory_mw
-
-    return main_agent
 ```
 
 ---
@@ -323,7 +312,6 @@ async def create_agent_executor(checkpointer=None):
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = None
     if checkpointer is None:
         conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
         await conn.execute("PRAGMA journal_mode=WAL;")
@@ -396,23 +384,13 @@ async def create_agent_executor(checkpointer=None):
     ])
 
     # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
-    main_agent = create_agent(
+    return create_agent(
         model=llm,
         tools=active_tools,
         middleware=middleware,
         checkpointer=checkpointer,
         context_schema=AgentContext,
     )
-
-    main_agent.registered_tools = active_tools
-    main_agent.registered_middlewares = middleware
-    main_agent.checkpointer_conn = conn
-    main_agent.episodic_store = episodic_store
-    main_agent.semantic_store = semantic_store
-    main_agent.assembler = assembler
-    main_agent.memory_middleware = memory_mw
-
-    return main_agent
 ```
 </details>
 
@@ -432,7 +410,7 @@ python tests/test_mission03.py
 ================================================================================
   ✅ Test 1 통과: Semantic Memory Store 로드 성공 (USER 엔트리: 5개, MEMORY 엔트리: 3개)
   ✅ Test 2 통과: Episodic Store FTS5 인덱싱 및 검색 확인 (검색 적중 세션: session_test_arch)
-  ✅ Test 3 통과: main_agent에 메모리 전용 도구(memory, session_recall) 정상 바인딩 (총 20종 도구)
+  ✅ Test 3 통과: main_agent에 메모리 전용 도구(memory, session_recall) 정상 바인딩 (총 21종 도구)
   ✅ Test 4 통과: Claude Code 5-Layer Prompt Assembler 정상 장착 확인
 
 ================================================================================

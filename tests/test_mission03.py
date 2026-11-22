@@ -84,6 +84,11 @@ async def run_prompt_and_memory_test():
     # 3. main_agent 하네스 결합 검증
     # -------------------------------------------------------------------------
     from app.agents import main_agent
+    from tests.agent_inspector import (
+        close_agent_resources,
+        extract_agent_tools,
+        extract_prompt_assembler,
+    )
 
     try:
         agent = await main_agent.create_agent_executor()
@@ -92,14 +97,7 @@ async def run_prompt_and_memory_test():
         return False
 
     # create_agent가 MemoryMiddleware.tools를 자동 수집하여 ToolNode에 등록하므로 ToolNode에서 전체 도구를 확인
-    all_tools = []
-    if hasattr(agent, "nodes") and "tools" in agent.nodes:
-        tools_node = agent.nodes["tools"]
-        bound_node = getattr(tools_node, "bound", tools_node)
-        if hasattr(bound_node, "tools_by_name"):
-            all_tools = list(bound_node.tools_by_name.values())
-    if not all_tools:
-        all_tools = list(getattr(agent, "registered_tools", []))
+    all_tools = extract_agent_tools(agent)
 
     tool_names = {getattr(t, "name", "") for t in all_tools}
 
@@ -112,7 +110,7 @@ async def run_prompt_and_memory_test():
     print(f"  ✅ Test 3 통과: main_agent에 메모리 도구(memory, session_recall) 자동 등록 및 전체 도구 바인딩 확인 (총 {len(all_tools)}종 도구)")
 
     # 미들웨어 탑재 여부 검증
-    assembler = getattr(agent, "assembler", None)
+    assembler = extract_prompt_assembler(agent)
     assert assembler is not None, "❌ main_agent에 PromptAssembler가 탑재되지 않았습니다."
     print("  ✅ Test 4 통과: Claude Code 5-Layer Prompt Assembler 정상 장착 확인")
 
@@ -145,15 +143,7 @@ async def run_prompt_and_memory_test():
     print("=" * 80)
 
     # 리소스 정리 및 임시 DB 파일 삭제
-    conn = getattr(agent, "checkpointer_conn", None)
-    if conn:
-        await conn.close()
-    agent_epi = getattr(agent, "episodic_store", None)
-    if agent_epi:
-        await agent_epi.close()
-    agent_tr = getattr(agent, "transcript_store", None)
-    if agent_tr:
-        await agent_tr.close()
+    await close_agent_resources(agent)
     await epi_store.close()
     for base in (test_epi_path, os.path.join(test_epi_dir, "test_episodic_verify_transcript.db")):
         for ext in ("", "-wal", "-shm"):
