@@ -54,6 +54,7 @@ async def run_mission01_test():
 
     # 3. chatbot 에이전트 바인딩 검증
     from app.agents import chatbot
+    from tests.agent_inspector import close_agent_resources, extract_agent_tools
 
     try:
         agent = await chatbot.create_agent_executor()
@@ -62,12 +63,7 @@ async def run_mission01_test():
         return False
 
     # 에이전트에 등록된 도구 목록 확인
-    tools = getattr(agent, "tools", []) or getattr(agent, "registered_tools", [])
-    if not tools and hasattr(agent, "nodes"):
-        # LangGraph 노드 내부에서 도구 목록 탐색
-        tools_node = agent.nodes.get("tools")
-        if tools_node and hasattr(tools_node, "tools_by_name"):
-            tools = list(tools_node.tools_by_name.values())
+    tools = extract_agent_tools(agent)
 
     tool_names = {getattr(t, "name", "") for t in tools}
     assert "roll_dice" in tool_names, (
@@ -81,10 +77,7 @@ async def run_mission01_test():
     print(f"  ✅ Test 3 통과: chatbot 에이전트에 커스텀 도구 바인딩 확인 (총 {len(tools)}종)")
 
     # 리소스 정리
-    checkpointer = getattr(agent, "checkpointer", None)
-    conn = getattr(checkpointer, "conn", None)
-    if conn:
-        await conn.close()
+    await close_agent_resources(agent)
 
     print("\n" + "=" * 70)
     print("🎉 [Mission 01] 커스텀 도구 구현 및 챗봇 결합 검증 100% 통과!")

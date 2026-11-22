@@ -14,7 +14,10 @@ def render_timeline_html(run_info: Dict[str, Any]) -> str:
     total_calls = run_info.get("total_tool_calls", 0)
     events = run_info.get("events", [])
 
-    status_color = "#34d399" if status == "SUCCESS" else "#f87171"
+    status_color = (
+        "#34d399" if status == "SUCCESS"
+        else ("#fbbf24" if status in ("RUNNING", "CANCELLED", "INTERRUPTED") else "#f87171")
+    )
     
     html = f"""
     <div style="background-color: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; padding: 24px; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.05); border: 1px solid #1e293b; max-width: 900px; margin: 20px auto;">
@@ -68,7 +71,7 @@ def render_timeline_html(run_info: Dict[str, Any]) -> str:
             in_tokens = ev.get("input_tokens", 0)
             out_tokens = ev.get("output_tokens", 0)
             msg_count = ev.get("input_messages_count", 0)
-            response_text = ev.get("response_text", "")
+            response_text = ev.get("response_text") or ev.get("response_snippet", "")
             
             # Extract main thoughts or brief version of the answer
             preview_text = response_text if len(response_text) < 300 else response_text[:300] + "..."
@@ -102,7 +105,7 @@ def render_timeline_html(run_info: Dict[str, Any]) -> str:
         elif ev_type == "tool_call":
             tool_name = ev.get("tool_name", "unknown")
             tool_args = ev.get("arguments", {})
-            result = ev.get("result", "")
+            result = ev.get("result") or ev.get("result_snippet", "")
             t_status = ev.get("status", "SUCCESS")
             
             tool_status_color = "#34d399" if t_status == "SUCCESS" else "#ef4444"

@@ -59,7 +59,6 @@ async def create_agent_executor(checkpointer=None):
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = None
     if checkpointer is None:
         conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
         await conn.execute("PRAGMA journal_mode=WAL;")
@@ -86,7 +85,7 @@ async def create_agent_executor(checkpointer=None):
 
     # 6. 하네스로 결합된 최종 메인 에이전트 인스턴스 구축
     #    (※ Mission 03부터는 PromptAssemblerMiddleware가 프롬프트를 주입하므로 system_prompt 인자를 제거합니다)
-    main_agent = create_agent(
+    return create_agent(
         model=llm,
         tools=active_tools,
         system_prompt=SUPERVISOR_SYSTEM_PROMPT,
@@ -94,8 +93,3 @@ async def create_agent_executor(checkpointer=None):
         checkpointer=checkpointer,
         context_schema=AgentContext,
     )
-
-    main_agent.registered_tools = active_tools
-    main_agent.registered_middlewares = middleware
-    main_agent.checkpointer_conn = conn
-    return main_agent

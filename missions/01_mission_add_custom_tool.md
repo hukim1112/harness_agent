@@ -132,17 +132,13 @@ async def create_agent_executor(checkpointer=None):
     # ---------------------------------------------------------------------------
     active_tools = list(tools_chatbot) + [roll_dice, convert_currency]
     
-    chatbot_agent = create_agent(
+    return create_agent(
         model=llm,
         tools=active_tools,              # 👈 등록된 도구 목록 전달
         system_prompt=CHATBOT_SYSTEM_PROMPT,
         checkpointer=checkpointer,
         context_schema=AgentContext
     )
-
-    chatbot_agent.registered_tools = active_tools
-    chatbot_agent.checkpointer_conn = conn
-    return chatbot_agent
 ```
 
 ---

@@ -69,7 +69,6 @@ async def create_agent_executor(checkpointer=None):
     os.makedirs(db_dir, exist_ok=True)
     checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
-    conn = None
     if checkpointer is None:
         conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
         await conn.execute("PRAGMA journal_mode=WAL;")
@@ -86,14 +85,10 @@ async def create_agent_executor(checkpointer=None):
     active_tools = list(tools_chatbot)
     
     # 5. 하네스로 결합된 최종 에이전트 인스턴스 구축
-    chatbot_agent = create_agent(
+    return create_agent(
         model=llm,
         tools=active_tools,
         system_prompt=CHATBOT_SYSTEM_PROMPT,
         checkpointer=checkpointer,
-        context_schema=AgentContext
+        context_schema=AgentContext,
     )
-
-    chatbot_agent.registered_tools = active_tools
-    chatbot_agent.checkpointer_conn = conn
-    return chatbot_agent
