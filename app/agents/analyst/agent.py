@@ -8,20 +8,19 @@
 패키지 구조:
   app/agents/analyst/
    ├── agent.py       (에이전트 조립 및 서브에이전트 맞춤 미들웨어 파이프라인)
-   ├── prompt.py      (ANALYST_SYSTEM_PROMPT — PromptAssembler의 Layer 1)
+   ├── prompt.py      (ANALYST_SYSTEM_PROMPT — 정적 SystemMessage)
    ├── tools.py       (분석 3종 + 출력 3종 + 공통 6종 = 12종 도구 바인딩)
-   └── skills/        (애널리스트 전용 스킬 문서 — Layer 2.2 카탈로그로 노출)
+   └── skills/        (애널리스트 전용 스킬 문서 — User Context 카탈로그 & Delta로 노출)
 ===============================================================================
 """
 
 import os
 import json
 from pathlib import Path
-import aiosqlite
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 
 from app.utils import init_chat_model
+from app.utils.database import get_shared_checkpointer
 from app.context import AgentContext
 from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
 from app.middleware.observability import AgentLogTracer
@@ -65,34 +64,25 @@ async def create_agent_executor(checkpointer=None):
         temperature=model_cfg.get("temperature", 0.0),
     )
 
-    # 2. AsyncSqliteSaver 기반 체크포인터 (SQLite 영구 메모리)
-    db_dir = "app/database"
-    os.makedirs(db_dir, exist_ok=True)
-    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
-
+    # 2. 공유 SQLite 체크포인터 SSOT
     if checkpointer is None:
-        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA busy_timeout=5000;")
-        checkpointer = AsyncSqliteSaver(conn)
-        await checkpointer.setup()
+        checkpointer = await get_shared_checkpointer()
 
-    # 3. 5-Layer Prompt Assembler (Analyst 내재화 skills/ 카탈로그 + L3 Session Workspace Root 동적 주입)
-    #    skills/SKILL.md(가이드 허브)는 Layer 2.2 카탈로그 상단에만 주입 (L5 중복 주입 안 함)
+    # 3. Prompt Assembler (정적 SystemMessage + 세션 동결 User Context + 스킬 Delta)
     skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
     skill_builder = SkillPromptBuilder(
         skills_dirs=[str(SKILLS_DIR)],
         guidelines_path=skill_guidelines,
     )
     assembler = PromptAssembler(
-        system_rules=ANALYST_SYSTEM_PROMPT,
-        tool_schemas=list(tools_analyst),
-        skill_catalog=skill_builder.assemble,
+        system_prompt=ANALYST_SYSTEM_PROMPT,
+        skill_guidelines=skill_builder.load_guidelines,
+        skill_provider=skill_builder.list_skills,
     )
-    prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
+    prompt_mw = create_prompt_assembler_middleware(assembler)
 
     # 4. Analyst 맞춤 미들웨어 파이프라인
-    #    [Log] → [PromptAssembler (L1~L5)] → [Self-Recovery 3종]
+    #    [Log] → [PromptAssembler] → [Self-Recovery 3종]
     #    ※ HITL 미적용: 서브에이전트는 백그라운드 Job으로 실행되어 승인 UI가 없으므로
     #      사용자 승인 게이트는 메인 에이전트(main_agent)에서만 운용합니다.
     middleware = []

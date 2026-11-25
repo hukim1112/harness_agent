@@ -1,7 +1,7 @@
 # 🛡️ Agent Harness Lab (프로덕션 에이전트 하네스 엔지니어링)
 
 > **LLM 모델을 신뢰할 수 있는 엔터프라이즈 에이전트로 도약시키는 하네스 엔지니어링 종합 실습 파이프라인**  
-> 자가 치유(Self-Recovery)부터 2단계 계층형 메모리, Claude Code 표준 5-Layer 프롬프트 조립, Progressive Skills 자율 실행, Human-in-the-Loop 권한 게이트, 가드레일 거버넌스 및 비동기 감사 궤적 관측성까지 — 실전 프로덕션 AI 에이전트 아키텍처를 직접 구축하고 검증합니다.
+> 자가 치유(Self-Recovery)부터 Semantic + Episodic Pull 도구(`session_search` / `session_recall`) 계층형 메모리, Claude Code 캐시 우선(Cache-First) 4단 프롬프트 조립, Progressive Skills & 양방향 Delta, Human-in-the-Loop 권한 게이트, 가드레일 거버넌스 및 비동기 감사 궤적 관측성까지 — 실전 프로덕션 AI 에이전트 아키텍처를 직접 구축하고 검증합니다.
 
 ---
 
@@ -54,7 +54,7 @@ LANGCHAIN_PROJECT=harness_agent
 notebooks/
 ├── 0_Template.ipynb                       # 📝 하네스 기본 템플릿
 ├── 1.Reasoning and Subagent.ipynb         # 🤖 ReAct, Task Planning, 서브에이전트 오케스트레이션
-├── 2.Context_Engineering.ipynb            # 🧠 Context Engineering: 5-Layer 프롬프트 조립, 계층형 메모리, 컨텍스트 압축
+├── 2.Context_Engineering.ipynb            # 🧠 Context Engineering: 계층형 메모리(Push/Pull), 캐시 우선 4단 프롬프트 조립, 컨텍스트 압축
 ├── 3.Skills_and_MCP.ipynb                 # 🧰 Progressive Skills 동적 발견 & Model Context Protocol
 ├── 4.Evaluation_and_LLM_as_Judge.ipynb    # ⚖️ LLM-as-a-Judge 정량 채점 & 회귀 테스트 자동화
 ├── 5.Human_in_the_Loop.ipynb              # 🛑 도구 보안 등급제 & LangGraph __interrupt__ 권한 게이트
@@ -68,10 +68,10 @@ notebooks/
 ```text
 missions/
 ├── 00_mission_start_and_chat.md            # 🚀 FastAPI 서버 & Chainlit 웹 UI 구동 및 첫 대화
-├── 01_mission_add_custom_tool.md           # 🛠️ 커스텀 도구(주사위/환율) 구현 및 챗봇 바인딩
+├── 01_mission_add_custom_tool.md           # 🛠️ ACI 철학 기반 커스텀 도구(roll_dice + 선택 자유 도구) 구현 및 챗봇 바인딩
 ├── 02_mission_self_recovery_and_subagent.md# 🛡️ 3대 자가 복구 미들웨어 & 서브에이전트 오케스트레이션
 ├── 03_mission_prompt_and_memory.md         # 🧠 Claude Code 프롬프트 조립기 & 백그라운드 에피소딕 메모리
-├── 04_mission_skills.md                    # 🧰 금융 분석 전문 스킬(12종) 동적 카탈로그 주입 & 대시보드
+├── 04_mission_skills.md                    # 🧰 금융 분석 전문 스킬 10종(총 12종) 동적 카탈로그 주입 & 대시보드
 ├── 05_mission_human_in_the_loop.md         # 🛑 roll_dice 타깃 HITL 권한 게이트 & 웹 대화형 승인/거절
 ├── 06_mission_guardrails.md                # 🛡️ 프롬프트 인젝션(S4)·탈옥 시도 선제 차단
 ├── 07_mission_logging_and_observability.md # 📊 비동기 감사 궤적 적재 & 세션 데이터 분석 대시보드
@@ -119,10 +119,10 @@ python -m app.utils.log_analyzer
 
 | 테스트 파일 | 대응 미션 | 주요 검증 내용 | 실행 명령어 |
 | :--- | :--- | :--- | :--- |
-| **`test_mission01.py`** | Mission 01 | 커스텀 도구 2종 및 `chatbot.py` 바인딩 검증 | `python tests/test_mission01.py` |
+| **`test_mission01.py`** | Mission 01 | ACI 커스텀 도구(`roll_dice` + 선택 자유 도구) 스펙 검증 및 `chatbot/agent.py` 바인딩 | `python tests/test_mission01.py` |
 | **`test_mission02.py`** | Mission 02 | `main_agent/agent.py` 자가 복구 미들웨어 3종 & 핵심 위임/기획 도구 바인딩 결합 | `python tests/test_mission02.py` |
-| **`test_mission03.py`** | Mission 03 | 5-Layer 프롬프트 조립 & 메모리 + **실물 시각화** | `python tests/test_mission03.py` |
-| **`test_mission04.py`** | Mission 04 | `main_agent/skills/` 동적 확장 & Layer 2.2 자동 주입 + **실물 시각화** | `python tests/test_mission04.py` |
+| **`test_mission03.py`** | Mission 03 | 캐시 우선 4단 프롬프트 조립 & Semantic/Episodic Pull 메모리 + **실물 시각화** | `python tests/test_mission03.py` |
+| **`test_mission04.py`** | Mission 04 | `main_agent/skills/` 동적 확장, `# skillCatalog` 주입 & 양방향 Delta + **실물 시각화** | `python tests/test_mission04.py` |
 | **`test_mission05.py`** | Mission 05 | HITL (`roll_dice` 타깃 권한 게이트 & 승인/거부 재개) | `python tests/test_mission05.py` |
 | **`test_mission06.py`** | Mission 06 | Guardrails (입력 보안 필터 — 프롬프트 인젝션·탈옥 차단) | `python tests/test_mission06.py` |
 | **`test_mission07.py`** | Mission 07 | Logging (`AgentLogTracer` 비동기 적재 & `log_analyzer` 분석) | `python tests/test_mission07.py` |
@@ -141,18 +141,19 @@ harness_agent/
 ├── configs/                # ⚙️ 런타임 하네스 설정 파일 모음
 │   ├── model.config        #   └── 메인/가드레일 LLM 모델 지정
 │   ├── memory.config       #   └── 세션 메모리 활성화 설정
+│   ├── compaction.config   #   └── 대형 도구 결과 Swap 및 대화 요약(Compaction) 설정
 │   ├── hitl.config         #   └── roll_dice 타깃 HITL 권한 게이트 설정
-│   ├── guardrail.config    #   └── 입력 보안 및 주제 차단 목록 설정
+│   ├── guardrail.config    #   └── 입력 보안(S1~S5) 가드레일 정책 설정
 │   └── logging.config      #   └── 비동기 감사 로깅 활성화 설정
 ├── app/                    # 🧠 프로덕션 에이전트 시스템 코어
-│   ├── agents/             #   ├── 에이전트 패키지 (chatbot.py, main_agent/, analyst/, scraper/ — 각 에이전트별 prompt.py/tools.py 포함)
+│   ├── agents/             #   ├── 에이전트 패키지 (chatbot/, main_agent/, analyst/, scraper/ — 각 에이전트별 agent.py/prompt.py/tools.py 패키지 구조)
 │   ├── tools/              #   ├── 내장 도구 및 커스텀 도구 모음 (custom_tools 등)
 │   ├── prompts/            #   ├── 공용 스킬 실행 지침서 (SKILL.md)
 │   ├── database/           #   ├── SQLite 단기 체크포인터(checkpoints.db) 및 FTS5 에피소딕 메모리(episodic.db)
 │   ├── evaluate/           #   ├── LLM-as-a-Judge 정량 채점 및 회귀 테스트 평가 모듈
 │   ├── middleware/         #   ├── 하네스 미들웨어 모음
 │   │   ├── memory/         #   │   └── 시맨틱/에피소딕 계층형 메모리 미들웨어
-│   │   ├── prompt/         #   │   └── Claude Code 5-Layer 프롬프트 조립기
+│   │   ├── prompt/         #   │   └── Claude Code 캐시 우선(Cache-First) 4단 프롬프트 조립기
 │   │   ├── compaction/     #   │   └── 대형 도구 결과 Swap & SummarizationMiddleware 대화 요약
 │   │   ├── error_control/  #   │   └── 모델 폴백 / 서킷 브레이커 자가 복구 미들웨어
 │   │   ├── guardrails/     #   │   └── InputSafetyGuardrail & TopicAlignmentGuardrail
@@ -188,8 +189,8 @@ harness_agent/
 | 구분 | v1.0 (Legacy) | v2.0 (Current) |
 | :--- | :--- | :--- |
 | **웹 UI 프론트엔드** | Streamlit (`app/ui.py`) | **Chainlit (`app/chainlit_ui.py`, 포트 `8080`, SSE 스트리밍 & HITL 버튼 연동)** |
-| **프롬프트 아키텍처** | 단일 문자열 템플릿 | **Claude Code 표준 5-Layer Prompt Assembler (JIT Dynamic Assembly)** |
-| **메모리 시스템** | 단순 대화 체크포인터 | **2-Stage JIT 계층형 메모리 (Semantic Memory + Daemon Background Episodic Store)** |
+| **프롬프트 아키텍처** | 단일 문자열 템플릿 | **Claude Code 캐시 우선 4단 Prompt Assembler (정적 System + 동결 User Context + Delta)** |
+| **메모리 시스템** | 단순 대화 체크포인터 | **Semantic 동결 스냅샷(Push) + Episodic 2단계 Pull 도구(`session_search` → `session_recall`)** |
 | **컨텍스트 압축** | 없음 | **대형 도구 결과 디스크 Swap (`ToolResultSwapMiddleware`) + LangChain `SummarizationMiddleware` 대화 요약** |
 | **도구 확장 메커니즘** | 정적 함수 바인딩 | **Progressive Skills (Frontmatter 경량 인덱싱 & 토큰 90% 절약형 동적 실행)** |
 | **권한 및 보안 제어** | 없음 (완전자율) | **Human-in-the-Loop (`__interrupt__` 기반 권한 게이트 & 웹 승인/거부 인터랙션)** |

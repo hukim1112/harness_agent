@@ -1,43 +1,42 @@
 """
 app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (Instructor 완성본)
 
-교육생이 Mission 00~07을 순서대로 완수하면 이 파일과 동일한 결과가 됩니다.
+교육생이 Mission 00~07을 순서대로 완수한 구성에 Context Compaction 및 StopHooksMiddleware를 추가한 완성본입니다.
 
 패키지 구조:
   app/agents/main_agent/
-   ├── agent.py       (에이전트 조립 및 9단계 미들웨어 파이프라인)
-   ├── prompt.py      (SUPERVISOR_SYSTEM_PROMPT — PromptAssembler의 Layer 1)
+   ├── agent.py       (에이전트 조립 및 10단계 / 11개 인스턴스 미들웨어 파이프라인)
+   ├── prompt.py      (SUPERVISOR_SYSTEM_PROMPT — 정적 SystemMessage)
    ├── tools.py       (계획 5종 + 오케스트레이션 4종 + 공통 8종 = 17종 도구 바인딩)
-   └── skills/        (에이전트 내재화 스킬 — Layer 2.2 카탈로그로 노출)
+   └── skills/        (에이전트 내재화 스킬 — User Context 카탈로그 & Delta로 노출)
 
 [하네스 구성 요소]
 1. 에이전트 프로필 (AGENT_METADATA)
-2. 5-Layer 프롬프트 스택 (Claude Code 표준):
-   - L1 System Rules & Identity ← SUPERVISOR_SYSTEM_PROMPT (5-Phase 오케스트레이션 루프)
-   - L2 Capabilities           ← 도구 스키마 + 스킬 실행 지침(skills/SKILL.md) + skills/ 카탈로그 (SkillPromptBuilder 자동 스캔)
-   - L3 Dynamic Session Context ← CWD, Session ID, Session Workspace Root, Date, Host OS
-   - L4 Recalled Memory         ← Semantic 스냅샷 + Episodic 과거 세션 요약 힌트
-   - L5 Project Rules            ← AGENT.md / CLAUDE.md (현재 미지정)
+2. 프롬프트 조립 구조 (단순화된 Claude Code 캐시 우선 구조):
+   - ① Tool Specification : API tools 필드 (create_agent 자동 바인딩 + 이름순 정렬)
+   - ② System Message     : 정적 SUPERVISOR_SYSTEM_PROMPT (cache_control: ephemeral)
+   - ③ User Context       : 대화 맨 앞 <system-reminder> (세션 · 스킬 지침/카탈로그 · Semantic 동결 스냅샷)
+   - ④ Conversation + Δ   : 대화 메시지 + 꼬리 <system-reminder> (Skill 양방향 Delta · 자정 날짜 변경)
 3. 계층형 메모리 (Layered Memory & Dual-Tier Session Data):
    - L1 단기 기억  : AsyncSqliteSaver (세션별 체크포인터 — SummarizationMiddleware가 이전 대화를 요약본으로 교체)
    - L2 에피소드 원문: TranscriptStore (transcript.db — 대화·도구 호출/결과 실시간 Append-only 백업)
-   - L2 에피소드 색인: EpisodicStore (episodic.db — 다중 주제 요약·키워드 SQLite FTS5 + session_recall JIT 인출)
+   - L2 에피소드 색인: EpisodicStore (episodic.db — 다중 주제 요약·키워드 SQLite FTS5 + session_search/session_recall 2단계 도구 인출)
    - L3 시맨틱 기억 : SemanticMemoryStore (USER.md / MEMORY.md + memory 도구)
 4. Self-Recovery & Self-Correction 미들웨어:
    - ModelFallbackMiddleware    : LLM 장애 시 백업 모델로 failover (413 토큰 초과는 상위로 전파)
    - ToolErrorHandlerMiddleware : 도구 예외 시 ToolMessage(Observation)로 변환
    - ModelCallLimitMiddleware   : 무한 루프 차단 (run_limit=50)
    - StopHooksMiddleware        : 생성된 Python 코드블록 AST 구문 검증 및 자가 교정 루프
-5. 도구: tools_supervisor(17종) + memory_tools(2종) + custom_tools(2종) = 총 21종
+5. 도구: tools_supervisor(17종) + memory_tools(3종: memory, session_search, session_recall) + custom_tools(CUSTOM_TOOLS, 기본 roll_dice 1종+) = 총 21종+
 
 [미들웨어 파이프라인 실행 순서]
    사용자 요청 →
      [1] AgentLogTracer            ← 가장 바깥: 차단 포함 전체 라이프사이클 감사 로깅
      [2] InputSafetyGuardrail      ← before_agent: 프롬프트 인젝션/탈옥 시도 선제 차단 (jump_to="end")
-     [3] MemoryMiddleware          ← before_agent(원문 기록 & L2/L3 메모리 인출) + wrap_model/tool(원문 기록 & 도구 필터링) + after_agent(유휴 리뷰 예약)
-     [4] PromptAssemblerMiddleware ← wrap_model_call: 5계층 시스템 프롬프트 조립
-     [5] Compaction                ← ToolResultSwapMiddleware(wrap_tool_call: 대형 도구 결과 디스크 Swap)
+     [3] MemoryMiddleware          ← before_agent(원문 기록 & L3 시맨틱 스냅샷 프리페치) + wrap_model/tool(원문 기록 & 도구 필터링) + after_agent(유휴 리뷰 예약)
+     [4] Compaction (2개 인스턴스) ← ToolResultSwapMiddleware(wrap_tool_call: 대형 도구 결과 디스크 Swap)
                                     + SummarizationMiddleware(before_model: trigger 초과 시 이전 대화 요약)
+     [5] PromptAssemblerMiddleware ← before_model(날짜/스킬Delta 알림) + wrap_model_call(정적 System + User Context + 도구 정렬)
      [6] HumanInTheLoopMiddleware  ← 도구 실행 직전 사용자 승인 요청
      [7] ModelFallbackMiddleware   ← 모델 호출 실패 시 백업 모델로 재시도
      [8] ToolErrorHandlerMiddleware← 도구 실행 오류 시 에러 메시지로 변환
@@ -49,19 +48,18 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (In
 import os
 import json
 from pathlib import Path
-import aiosqlite
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.utils import init_chat_model
+from app.utils.database import get_shared_checkpointer
 from app.context import AgentContext
 
 from .prompt import SUPERVISOR_SYSTEM_PROMPT
 from .tools import tools_supervisor
 
-# Mission 01: 커스텀 도구 (roll_dice, convert_currency)
-from app.tools.custom_tools import roll_dice, convert_currency
+# Mission 01: ACI 커스텀 도구 (CUSTOM_TOOLS — 기본 roll_dice + 선택 자유 도구)
+from app.tools.custom_tools import CUSTOM_TOOLS, roll_dice
 
 # Mission 03: 계층형 메모리 + 5계층 프롬프트 조립기
 from app.middleware.memory import (
@@ -121,21 +119,15 @@ async def create_agent_executor(checkpointer=None):
         temperature=model_cfg.get("temperature", 0.0)
     )
 
-    # 3. L1 단기 기억 (SQLite 기반 세션 체크포인터)
-    db_dir = "app/database"
-    os.makedirs(db_dir, exist_ok=True)
-    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
-
+    # 3. L1 단기 기억 (공유 SQLite 체크포인터 SSOT)
     if checkpointer is None:
-        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA busy_timeout=5000;")
-        checkpointer = AsyncSqliteSaver(conn)
-        await checkpointer.setup()
+        checkpointer = await get_shared_checkpointer()
 
-    # 4. 도구 바인딩 (Supervisor 17종 + Custom 2종 = 19종 / Memory 2종은 memory_mw가 create_agent에 자동 등록 → 총 21종)
-    #    ※ PromptAssembler(tool_schemas=active_tools)에서 참조하므로 먼저 선언합니다.
-    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
+    # 4. 도구 바인딩 (Supervisor 17종 + Custom 도구 / Memory 3종은 memory_mw가 자동 등록 → 총 21종+)
+    custom_tools_list = list(CUSTOM_TOOLS)
+    if not any(getattr(t, "name", "") == getattr(roll_dice, "name", "roll_dice") for t in custom_tools_list):
+        custom_tools_list.append(roll_dice)
+    active_tools = list(tools_supervisor) + custom_tools_list
 
     # 4-1. 메모리 설정 로드 (configs/memory.config)
     memory_cfg = _load_config("./configs/memory.config", {})
@@ -155,7 +147,7 @@ async def create_agent_executor(checkpointer=None):
     semantic_store.load_from_disk()
 
     # 4-3. L2 원문 저장소(TranscriptStore) + 요약 색인(EpisodicStore) 초기화
-    transcript_db_path = tr_cfg.get("db_path", os.path.join(db_dir, "transcript.db"))
+    transcript_db_path = tr_cfg.get("db_path", "./app/database/transcript.db")
     os.makedirs(os.path.dirname(transcript_db_path) or ".", exist_ok=True)
     transcript_store = TranscriptStore(
         db_path=transcript_db_path,
@@ -163,7 +155,7 @@ async def create_agent_executor(checkpointer=None):
     )
     await transcript_store.setup()
 
-    episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
+    episodic_db_path = epi_cfg.get("db_path", "./app/database/episodic.db")
     os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
     episodic_store = EpisodicStore(
         db_path=episodic_db_path,
@@ -171,7 +163,7 @@ async def create_agent_executor(checkpointer=None):
     )
     await episodic_store.setup()
 
-    # 4-4. MemoryMiddleware 구성 (스토어 + memory / session_recall 도구 자동 등록 + 원문 기록 + 유휴 요약 훅)
+    # 4-4. MemoryMiddleware 구성 (스토어 + memory / session_search / session_recall 도구 자동 등록 + 원문 기록 + 유휴 요약 훅)
     memory_mw = MemoryMiddleware(
         semantic_store=semantic_store,
         episodic_store=episodic_store,
@@ -183,9 +175,9 @@ async def create_agent_executor(checkpointer=None):
         finalize_max_age_s=float(epi_cfg.get("finalize_max_age_s", 1800.0)),
     )
 
-    # 4-5. Claude Code 표준 5-Layer Prompt Assembler 구성
+    # 4-5. Prompt Assembler 구성 (순수 정적 SystemMessage + 세션 동결 User Context + 스킬 Delta)
     #    - 스킬: 에이전트 내장 skills/ 만 스캔 (Mission 04 금융 스킬도 이 폴더에 설치)
-    #    - skills/SKILL.md(스킬 실행 지침)는 Layer 2.2 카탈로그 상단에만 주입 (L5 중복 주입 안 함)
+    #    - skills/SKILL.md(스킬 실행 지침)와 초기 스킬 목록은 User Context(# skillCatalog)에 통합, 변경분은 Delta로 주입
     skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
     skill_builder = SkillPromptBuilder(
         skills_dirs=[str(SKILLS_DIR)],
@@ -193,12 +185,11 @@ async def create_agent_executor(checkpointer=None):
     )
 
     assembler = PromptAssembler(
-        system_rules=SUPERVISOR_SYSTEM_PROMPT,
-        tool_schemas=active_tools,
-        skill_catalog=skill_builder.assemble,
-        l4_docs={},
+        system_prompt=SUPERVISOR_SYSTEM_PROMPT,
+        skill_guidelines=skill_builder.load_guidelines,
+        skill_provider=skill_builder.list_skills,
     )
-    prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
+    prompt_mw = create_prompt_assembler_middleware(assembler)
 
     # ─────────────────────────────────────────────────────────────────
     # 5. 통합 미들웨어 파이프라인 (보안 & 거버넌스 순서)
@@ -206,7 +197,7 @@ async def create_agent_executor(checkpointer=None):
     # 미들웨어는 리스트 순서대로 요청을 감싸는 러시안 인형 구조입니다.
     # 리스트 앞쪽 = 바깥 껍데기(먼저 실행), 뒤쪽 = LLM에 가까운 내부.
     #
-    #   요청 → [Log] → [Guard] → [Memory] → [Prompt] → [HITL] → [SelfRecovery] → LLM
+    #   요청 → [Log] → [Guard] → [Memory] → [Compaction] → [Prompt] → [HITL] → [SelfRecovery] → [StopHooks] → LLM
     # ─────────────────────────────────────────────────────────────────
     middleware = []
 
@@ -230,12 +221,12 @@ async def create_agent_executor(checkpointer=None):
                 fail_mode=safety_cfg.get("fail_mode", "open"),
             ))
 
-    # (3) Memory & Prompt — 원문 기록·메모리 인출(before_agent, 가드레일 통과 후 실행) + 도구 필터링 → 5계층 프롬프트 조립
-    middleware.extend([memory_mw, prompt_mw])
+    # (3) Memory — 원문 기록·메모리 인출(before_agent, 가드레일 통과 후 실행) + 도구 필터링
+    middleware.append(memory_mw)
 
     # (3-1) Context Compaction (configs/compaction.config)
     #       - 대형 도구 결과 → 디스크 Swap (swap_dir 미지정: artifacts/users/{user_id}/sessions/{session_id}/tool-results/)
-    #       - 대화가 trigger_tokens를 넘으면 이전 대화를 요약
+    #       - 대화가 trigger_tokens를 넘으면 이전 대화를 요약 (PromptAssembler 앞에 두어 압축 후 skill_delta 재주입)
     #         trigger는 시스템 프롬프트·도구 스키마를 포함한 실사용량과도 비교됩니다.
     #         이 에이전트의 고정 오버헤드가 약 11K 토큰이므로 trigger는 그보다 넉넉히 크게 둡니다.
     compaction_cfg = _load_config("./configs/compaction.config", {"compaction_enabled": False})
@@ -252,6 +243,9 @@ async def create_agent_executor(checkpointer=None):
             # 원문 기록이 꺼져 있으면 압축 이벤트도 transcript.db에 남기지 않음
             transcript_store=transcript_store if tr_cfg.get("enabled", True) else None,
         ))
+
+    # (3-2) Prompt Assembler — 정적 SystemMessage + 세션 동결 User Context + Delta 알림 조립
+    middleware.append(prompt_mw)
 
     # (4) Human-in-the-Loop — 지정 도구(roll_dice) 실행 전 사용자 승인 게이트
     hitl_cfg = _load_config("./configs/hitl.config", {"hitl_enabled": False})

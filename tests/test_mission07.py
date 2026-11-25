@@ -36,7 +36,9 @@ async def run_mission07_test():
     with open(cfg_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
-    assert "logging_enabled" in cfg, "❌ logging.config에 'logging_enabled' 항목이 없습니다."
+    assert cfg.get("logging_enabled") is True, (
+        "❌ configs/logging.config의 'logging_enabled'가 true로 설정되어 있지 않습니다. Mission 07 1단계를 확인하세요."
+    )
 
     import inspect
     from app.agents.main_agent import agent as main_agent_mod
@@ -50,7 +52,7 @@ async def run_mission07_test():
     )
     print("  ✅ Test 1 통과: configs/logging.config 규격 및 main_agent AgentLogTracer 장착 확인 완료")
 
-    # 2. AgentLogTracer 미들웨어 장착 테스트 에이전트 빌드 (노트북 7번 기반)
+    # 2. AgentLogTracer 미들웨어 장착 테스트 에이전트 빌드 (노트북 6번 기반)
     from app.middleware.observability import AgentLogTracer
     from app.utils.log_analyzer import analyze_logs, print_log_dashboard
     from app.tools.custom_tools import roll_dice
@@ -133,8 +135,7 @@ async def run_mission07_test():
 
     print("=" * 70)
     print("🎉 [Mission 07] Logging & Observability (감사 궤적 & 세션 분석) 100% 통과!")
-    print("   이제 configs/logging.config의 'logging_enabled': true로 설정하고,")
-    print("   Chainlit 대화 후 'python -m app.utils.log_analyzer'로 관측 대시보드를 확인하세요.")
+    print("   이제 Chainlit 대화 후 'python -m app.utils.log_analyzer'로 관측 대시보드를 확인하세요.")
     print("=" * 70)
     return True
 

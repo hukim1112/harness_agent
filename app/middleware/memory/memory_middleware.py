@@ -16,7 +16,7 @@ Source: frontier-agent-lab/modules/hermes/memory_middleware.py
 Hooks:
 - before_agent / abefore_agent:
     새 턴 시작 → 유휴 리뷰 취소, 사용자 질문 원문 기록,
-    L3(시맨틱) 프리페치 + L2(에피소드 요약) 자동 인출 → recalled_memory 주입
+    L3(시맨틱) 프리페치 → memory_snapshot / recalled_memory 주입 (세션 동결)
 - wrap_model_call: 꺼진 메모리 도구 필터링 → 모델 응답(AI 메시지·도구 호출) 원문 기록
 - wrap_tool_call: 사용자 ContextVar 전파 + 꺼진 도구 차단 → 도구 결과 원문 기록
 - after_agent / aafter_agent: 누락분 보정 기록(가드레일 차단 턴은 kind=blocked),
@@ -24,14 +24,14 @@ Hooks:
 
 원문 기록 스위치는 메모리 학습/주입 스위치와 독립입니다:
 - memory.config의 transcript.enabled (배포 정책) + AgentContext.transcript_enabled (요청별)
-- episodic_memory_enabled: 과거 세션 요약을 검색해 프롬프트에 주입할지
+- episodic_memory_enabled: 에피소드 기억 검색·회상 도구(session_search, session_recall) 활성화 여부
 - episodic_learning_enabled: 원문을 LLM으로 요약해 episodic.db에 학습할지
 
 Tool Factory:
-- self.tools: [memory(), session_recall()] 도구를 소유하며, create_agent()가 생성 시 자동으로 에이전트 도구로 주입
+- self.tools: [memory(), session_search(), session_recall()] 도구를 소유하며, create_agent()가 생성 시 자동으로 에이전트 도구로 주입
   - memory(): 에이전트가 직접 MEMORY.md / USER.md를 관리 (add/replace/remove)
-  - session_recall(): Anchor 기반 과거 세션 원문 인출 (transcript.db)
-  - session_search는 도구로 제공하지 않음 (before_agent가 자동 인출)
+  - session_search(): 1단계 과거 세션 FTS5 검색 및 최근 세션 브라우즈 (Pull)
+  - session_recall(): 2단계 Anchor 기반 과거 세션 원문 정밀 인출 (transcript.db)
 
 Background Review (Hermes _spawn_background_review + review_idle_queue 패턴):
 - 메인 스레드를 블로킹하지 않음 (ThreadPoolExecutor + 세션별 cancel_event 취소 제어)
@@ -70,6 +70,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_USER_ID = "default"
 _memory_user_id_var: ContextVar[str] = ContextVar("_memory_user_id_var", default=_DEFAULT_USER_ID)
+_memory_session_id_var: ContextVar[str] = ContextVar("_memory_session_id_var", default="")
 _MEMORY_REGISTRY_LOCK = threading.RLock()
 _MEMORY_INSTANCES: "weakref.WeakSet[MemoryMiddleware]" = weakref.WeakSet()
 
@@ -165,7 +166,7 @@ class MemoryMiddleware(AgentMiddleware):
         episodic_store,
         review_llm=None,
         top_k: int = 2,
-        auto_recall_episodic: bool = True,
+        auto_recall_episodic: bool = False,
         transcript_store: Optional[TranscriptStore] = None,
         transcript_enabled: bool = True,
         finalize_idle_settle_s: float = 15.0,
@@ -176,7 +177,8 @@ class MemoryMiddleware(AgentMiddleware):
             semantic_store: 기본 사용자(default)의 SemanticMemoryStore
             episodic_store: 공유 EpisodicStore (user_id 컬럼으로 사용자 격리)
             review_llm: Background Review(시맨틱 갱신·세션 요약)에 사용할 LLM
-            top_k: 매 턴 Layer 4에 자동 주입할 과거 세션(Episodic) 요약 개수
+            top_k: (하위 호환) 유지 파라미터
+            auto_recall_episodic: (하위 호환) 유지 파라미터 — 에피소드 기억은 session_search/session_recall 도구로 조회
             transcript_store: 원문 전체본 저장소 (TranscriptStore, 미지정 시 episodic_store.transcript 사용)
             transcript_enabled: 대화 원문(transcript.db) 자동 백업 활성화 여부 (메모리 학습 스위치와 독립)
             finalize_idle_settle_s: 유휴 지연 요약 대기 시간(초, 기본 15초)
@@ -236,7 +238,7 @@ class MemoryMiddleware(AgentMiddleware):
         self._session_recall_tool = self._create_session_recall_tool()
         # AgentMiddleware.tools — LangChain create_agent()가 생성 시 한 번 읽어 에이전트 도구로 자동 주입합니다
         # (langchain/agents/factory.py의 middleware_tools 수집 → tools=와 합쳐 등록).
-        self.tools = [self._memory_tool, self._session_recall_tool]
+        self.tools = [self._memory_tool, self._session_search_tool, self._session_recall_tool]
 
         with _MEMORY_REGISTRY_LOCK:
             _MEMORY_INSTANCES.add(self)
@@ -326,6 +328,14 @@ class MemoryMiddleware(AgentMiddleware):
             pass
         return _sanitize_user_id(_memory_user_id_var.get())
 
+    def _resolve_current_session_id(self, runtime: Any = None) -> Optional[str]:
+        """현재 실행 중인 session_id를 추출합니다 (session_search에서 현재 세션 자기참조 제외용)."""
+        sid = self._get_session_id(runtime)
+        if sid and sid != "unknown":
+            return sid
+        fallback = (_memory_session_id_var.get() or "").strip()
+        return fallback if fallback and fallback != "unknown" else None
+
     def _is_transcript_enabled(self, runtime: Any = None) -> bool:
         """원문 저장소(transcript.db) 기록이 활성화되어 있는지 확인 (메모리 학습 스위치와 독립)."""
         if not self.transcript_enabled or self.transcript_store is None:
@@ -408,7 +418,7 @@ class MemoryMiddleware(AgentMiddleware):
             - Write entries in English for search efficiency.
             - Keep entries short (1-2 sentences). Merge overlapping facts.
             - Do NOT store task-specific data, logs, or temporary state.
-            - Current MEMORY.md and USER.md contents for the active user are ALREADY preloaded in Layer 4 (Recalled Memory) of your system prompt. Do NOT use file_read, glob_search, or bash_command to search for USER.md or MEMORY.md on disk.
+            - Current MEMORY.md and USER.md contents for the active user are ALREADY preloaded in the initial user context (<system-reminder> # memorySnapshot). Do NOT use file_read, glob_search, or bash_command to search for USER.md or MEMORY.md on disk.
 
             Args:
                 action: "add" | "replace" | "remove"
@@ -440,68 +450,110 @@ class MemoryMiddleware(AgentMiddleware):
         """@tool session_search(query, limit) 생성 — 1단계 세션 탐색 및 브라우즈."""
         mw = self
 
-        @langchain_tool
-        def session_search(
-            query: str = "",
-            limit: int = 3,
-        ) -> str:
-            """Search past conversation sessions to recall relevant context.
+        def _supplement_from_transcript(
+            results: List[Dict[str, Any]],
+            raw_hits: List[Dict[str, Any]],
+            limit: int,
+        ) -> List[Dict[str, Any]]:
+            seen_sids = {r.get("session_id") for r in results}
+            for hit in raw_hits:
+                sid = hit.get("session_id")
+                if sid and sid not in seen_sids:
+                    seen_sids.add(sid)
+                    results.append({
+                        "session_id": sid,
+                        "summary": f"(Transcript match) {hit.get('snippet', '')}",
+                        "topics": [],
+                        "keywords": [],
+                        "tool_names": [],
+                        "snippet": hit.get("snippet", ""),
+                    })
+                    if len(results) >= limit:
+                        break
+            return results
 
-            Two modes (inferred from arguments):
-            1. DISCOVERY: Pass a query string to search for related past sessions via FTS5.
-               Returns session summaries, keywords, and match snippets.
-            2. BROWSE: Call with no arguments (or empty query) to list recent sessions chronologically.
-
-            Args:
-                query: Search query in English (empty = browse recent sessions)
-                limit: Max sessions to return (default 3)
-
-            Returns:
-                JSON with session list: [{session_id, summary, keywords, snippet}, ...]
-            """
-            uid = mw._resolve_current_user_id()
-            epi_store = mw._get_episodic_store(uid)
-            if query.strip():
-                results = _run_async_safe(
-                    epi_store.search_sessions(query, top_k=limit, user_id=uid)
-                )
-                # episodic.db 요약에 아직 반영되지 않았거나 정확한 식별자가 원문(transcript.db)에만 있는 경우 보충
-                if len(results) < limit and mw.transcript_store is not None:
-                    seen_sids = {r.get("session_id") for r in results}
-                    raw_hits = mw.transcript_store.search_sync(
-                        query=query, top_k=limit, user_id=uid
-                    )
-                    for hit in raw_hits:
-                        sid = hit.get("session_id")
-                        if sid and sid not in seen_sids:
-                            seen_sids.add(sid)
-                            results.append({
-                                "session_id": sid,
-                                "summary": f"(Transcript match) {hit.get('snippet', '')}",
-                                "topics": [],
-                                "keywords": [],
-                                "tool_names": [],
-                                "snippet": hit.get("snippet", ""),
-                            })
-                            if len(results) >= limit:
-                                break
-            else:
-                results = _run_async_safe(
-                    epi_store.browse_recent(limit=limit, user_id=uid)
-                )
-
+        def _format_search_result(query: str, results: List[Dict[str, Any]]) -> str:
             if not results:
                 return json.dumps({
                     "results": [],
                     "message": "No matching sessions found." if query else "No past sessions recorded.",
-                })
-
+                }, ensure_ascii=False)
             return json.dumps({
                 "query": query or "(browse recent)",
                 "results": results,
                 "count": len(results),
             }, ensure_ascii=False, indent=2)
 
+        @langchain_tool
+        def session_search(
+            query: str = "",
+            limit: int = 3,
+        ) -> str:
+            """Search past conversation sessions to recall prior decisions, preferences, or context.
+
+            Two modes (inferred from arguments):
+            1. DISCOVERY: Pass a query string to search past sessions via FTS5.
+               Supports Korean and English keywords (e.g. "Zephyr", "도커 멀티스테이지", "JWT 만료").
+               Returns session_id, summaries, keywords, and match snippets.
+            2. BROWSE: Call with no arguments (or empty query) to list recent sessions chronologically.
+
+            Use this tool whenever the user asks about past conversations, earlier meetings,
+            prior architectural decisions, or previously discussed topics that are not in the
+            current session. Follow up with `session_recall(session_id, anchor_message)` to
+            retrieve exact transcript messages when needed.
+
+            Args:
+                query: Search query in Korean or English (empty = browse recent sessions)
+                limit: Max sessions to return (default 3)
+
+            Returns:
+                JSON with session list: [{session_id, summary, keywords, snippet}, ...]
+            """
+            uid = mw._resolve_current_user_id()
+            exclude_sid = mw._resolve_current_session_id()
+            epi_store = mw._get_episodic_store(uid)
+            if query.strip():
+                results = _run_async_safe(
+                    epi_store.search_sessions(
+                        query, top_k=limit, exclude_session_id=exclude_sid, user_id=uid
+                    )
+                )
+                if len(results) < limit and mw.transcript_store is not None:
+                    raw_hits = mw.transcript_store.search_sync(
+                        query=query, top_k=limit, exclude_session_id=exclude_sid, user_id=uid
+                    )
+                    results = _supplement_from_transcript(results, raw_hits, limit)
+            else:
+                results = _run_async_safe(
+                    epi_store.browse_recent(limit=limit, user_id=uid)
+                )
+            return _format_search_result(query, results)
+
+        async def _asession_search(
+            query: str = "",
+            limit: int = 3,
+        ) -> str:
+            uid = mw._resolve_current_user_id()
+            exclude_sid = mw._resolve_current_session_id()
+            epi_store = mw._get_episodic_store(uid)
+            if query.strip():
+                results = await epi_store.search_sessions(
+                    query, top_k=limit, exclude_session_id=exclude_sid, user_id=uid
+                )
+                if len(results) < limit and mw.transcript_store is not None:
+                    raw_hits = await asyncio.to_thread(
+                        mw.transcript_store.search_sync,
+                        query=query,
+                        top_k=limit,
+                        exclude_session_id=exclude_sid,
+                        user_id=uid,
+                    )
+                    results = _supplement_from_transcript(results, raw_hits, limit)
+            else:
+                results = await epi_store.browse_recent(limit=limit, user_id=uid)
+            return _format_search_result(query, results)
+
+        session_search.coroutine = _asession_search
         return session_search
 
     def _create_session_recall_tool(self):
@@ -557,7 +609,7 @@ class MemoryMiddleware(AgentMiddleware):
 
             If anchor_message is empty, returns the last `window` messages of the session.
 
-            Use this tool after seeing a relevant session hint in Recalled Episodic Memory (Layer 4).
+            Use this tool after finding a relevant session_id via session_search.
 
             Args:
                 session_id: The session ID to recall messages from
@@ -610,6 +662,7 @@ class MemoryMiddleware(AgentMiddleware):
         if not getattr(ctx, "semantic_memory_enabled", True):
             disabled.add(self._memory_tool.name)
         if not getattr(ctx, "episodic_memory_enabled", True):
+            disabled.add(self._session_search_tool.name)
             disabled.add(self._session_recall_tool.name)
         return disabled
 
@@ -697,10 +750,13 @@ class MemoryMiddleware(AgentMiddleware):
             return blocked
 
         uid = self._resolve_current_user_id(runtime)
+        sid = self._get_session_id(runtime, request)
         tok = _memory_user_id_var.set(uid)
+        sid_tok = _memory_session_id_var.set(sid if sid != "unknown" else "")
         try:
             result = handler(request)
         finally:
+            _memory_session_id_var.reset(sid_tok)
             _memory_user_id_var.reset(tok)
 
         if isinstance(result, BaseMessage):
@@ -742,10 +798,13 @@ class MemoryMiddleware(AgentMiddleware):
             return blocked
 
         uid = self._resolve_current_user_id(runtime)
+        sid = self._get_session_id(runtime, request)
         tok = _memory_user_id_var.set(uid)
+        sid_tok = _memory_session_id_var.set(sid if sid != "unknown" else "")
         try:
             result = await handler(request)
         finally:
+            _memory_session_id_var.reset(sid_tok)
             _memory_user_id_var.reset(tok)
 
         if isinstance(result, BaseMessage):
@@ -774,6 +833,7 @@ class MemoryMiddleware(AgentMiddleware):
         session_id = self._get_session_id(runtime)
         user_id = self._resolve_current_user_id(runtime)
         _memory_user_id_var.set(user_id)
+        _memory_session_id_var.set(session_id if session_id != "unknown" else "")
 
         # 같은 세션에서 새 턴이 시작되면 대기/진행 중이던 이전 턴 Background Review를 즉시 취소
         self._cancel_active_review(session_id)
@@ -854,65 +914,33 @@ class MemoryMiddleware(AgentMiddleware):
 
         return ctx, session_id, user_id, recalled_parts
 
+    @staticmethod
+    def _assign_recalled_context(ctx: Any, snapshot_parts: List[str]) -> None:
+        """세션 동결 스냅샷(memory_snapshot)과 하위 호환 별칭(recalled_memory)을 갱신합니다.
+        (에피소드 기억은 프롬프트에 자동 주입하지 않고 session_search / session_recall 도구로 조회)"""
+        snapshot_text = "\n\n".join(snapshot_parts) if snapshot_parts else ""
+        if hasattr(ctx, "memory_snapshot"):
+            ctx.memory_snapshot = snapshot_text
+        ctx.recalled_memory = snapshot_text
+
     def before_agent(self, state: Dict[str, Any], runtime: Any) -> Optional[Dict[str, Any]]:
-        """동기 실행 경로용 원문 기록 + L2+L3 메모리 인출 → AgentContext.recalled_memory에 주입."""
+        """동기 실행 경로용 원문 기록 + L3 Semantic Snapshot 프리페치 → memory_snapshot / recalled_memory 주입."""
         prepared = self._prepare_turn_and_semantic_memory(state, runtime)
         if not prepared:
             return None
-        ctx, session_id, user_id, recalled_parts = prepared
-
-        # L2: Episodic Memory 자동 인출 (동기 호출자용 _run_async_safe 경로)
-        if getattr(ctx, "episodic_memory_enabled", True) and self.top_k > 0:
-            user_query = self._extract_last_user_query(state)
-            if user_query:
-                try:
-                    epi_store = self._get_episodic_store(user_id)
-                    sessions = _run_async_safe(
-                        epi_store.search_sessions(
-                            user_query,
-                            top_k=self.top_k,
-                            exclude_session_id=session_id,
-                            user_id=user_id,
-                        )
-                    )
-                    if sessions:
-                        recalled_parts.append(self._format_episodic(sessions))
-                except Exception as e:
-                    logger.warning("Episodic memory retrieval failed: %s", e)
-
-        if recalled_parts:
-            ctx.recalled_memory = "\n\n".join(recalled_parts)
-
+        ctx, _session_id, _user_id, recalled_parts = prepared
+        self._assign_recalled_context(ctx, recalled_parts)
         return None
 
     async def abefore_agent(self, state: Dict[str, Any], runtime: Any) -> Optional[Dict[str, Any]]:
-        """비동기 실행 경로(FastAPI ainvoke/astream_events)용 네이티브 논블로킹 원문 기록 + L2+L3 메모리 인출."""
+        """비동기 실행 경로(FastAPI ainvoke/astream_events)용 원문 기록 + L3 Semantic Snapshot 프리페치."""
         prepared = await asyncio.to_thread(self._prepare_turn_and_semantic_memory, state, runtime)
         if not prepared:
             return None
-        ctx, session_id, user_id, recalled_parts = prepared
+        ctx, _session_id, user_id, recalled_parts = prepared
         _memory_user_id_var.set(user_id)
-
-        # L2: Episodic Memory 자동 인출 (이벤트 루프를 블로킹하지 않는 네이티브 await 경로)
-        if getattr(ctx, "episodic_memory_enabled", True) and self.top_k > 0:
-            user_query = self._extract_last_user_query(state)
-            if user_query:
-                try:
-                    epi_store = self._get_episodic_store(user_id)
-                    sessions = await epi_store.search_sessions(
-                        user_query,
-                        top_k=self.top_k,
-                        exclude_session_id=session_id,
-                        user_id=user_id,
-                    )
-                    if sessions:
-                        recalled_parts.append(self._format_episodic(sessions))
-                except Exception as e:
-                    logger.warning("Episodic memory retrieval failed: %s", e)
-
-        if recalled_parts:
-            ctx.recalled_memory = "\n\n".join(recalled_parts)
-
+        _memory_session_id_var.set(_session_id if _session_id != "unknown" else "")
+        self._assign_recalled_context(ctx, recalled_parts)
         return None
 
     def after_agent(self, state: Dict[str, Any], runtime: Any) -> Optional[Dict[str, Any]]:
@@ -1235,18 +1263,6 @@ class MemoryMiddleware(AgentMiddleware):
     # ══════════════════════════════════════════════════════════════════
 
     @staticmethod
-    def _extract_last_user_query(state: Dict[str, Any]) -> str:
-        """state에서 마지막 유저 메시지 추출."""
-        messages = state.get("messages", [])
-        idx = last_user_turn_start(messages)
-        if idx is None:
-            return ""
-        msg = messages[idx]
-        if isinstance(msg, dict):
-            return normalize_content(msg.get("content", "") or "")
-        return normalize_content(getattr(msg, "content", "") or "")
-
-    @staticmethod
     def _get_session_id(runtime: Any, request: Any = None) -> str:
         """runtime 및 request에서 session_id(thread_id)를 지능적으로 추출."""
         # 1. langchain_core의 get_config_from_context() 시도
@@ -1293,39 +1309,6 @@ class MemoryMiddleware(AgentMiddleware):
                     return str(configurable["thread_id"])
 
         return "unknown"
-
-    @staticmethod
-    def _format_episodic(sessions: List[Dict[str, Any]]) -> str:
-        """에피소드 검색 결과를 프롬프트 주입용 텍스트로 포맷."""
-        if not sessions:
-            return ""
-
-        separator = "═" * 46
-        header = "EPISODIC MEMORY (relevant past sessions)"
-        lines = [separator, header, separator]
-
-        for i, s in enumerate(sessions, 1):
-            lines.append(f"[Session {i}] {s.get('session_id', 'unknown')}")
-            lines.append(f"  Summary: {s.get('summary', 'N/A')}")
-            topics = s.get("topics") or []
-            if isinstance(topics, list) and topics:
-                topic_titles = []
-                for t in topics:
-                    if isinstance(t, str) and t.strip():
-                        topic_titles.append(t.strip())
-                    elif isinstance(t, dict) and (t.get("title") or t.get("outcome")):
-                        topic_titles.append(str(t.get("title") or t.get("outcome") or "").strip())
-                if topic_titles:
-                    lines.append(f"  Topics: {'; '.join(topic_titles[:4])}")
-            tool_names = s.get("tool_names") or []
-            if tool_names:
-                lines.append(f"  Tools: {', '.join(tool_names)}")
-            keywords = s.get("keywords", [])
-            if keywords:
-                lines.append(f"  Keywords: {', '.join(keywords)}")
-            lines.append("")
-
-        return "\n".join(lines)
 
 
 # ── Module-level helper ──

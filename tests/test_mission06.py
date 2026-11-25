@@ -35,6 +35,9 @@ async def run_mission06_test():
     with open(cfg_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
+    assert cfg.get("guardrail_enabled") is True, (
+        "❌ configs/guardrail.config의 'guardrail_enabled'가 true로 설정되어 있지 않습니다. Mission 06 1단계를 확인하세요."
+    )
     assert "input_safety" in cfg, "❌ guardrail.config에 'input_safety' 설정이 없습니다."
 
     import inspect
@@ -49,7 +52,7 @@ async def run_mission06_test():
     )
     print("  ✅ Test 1 통과: configs/guardrail.config 규격 및 main_agent 가드레일 장착 확인 완료")
 
-    # 2. 가드레일 미들웨어 인스턴스 초기화 (노트북 7번 기반)
+    # 2. 가드레일 미들웨어 인스턴스 초기화 (노트북 6번 기반)
     from app.middleware.guardrails import InputSafetyGuardrail
     from langchain.agents import create_agent
     from app.utils import init_chat_model, normalize_content
@@ -97,8 +100,7 @@ async def run_mission06_test():
 
     print("\n" + "=" * 70)
     print("🎉 [Mission 06] Guardrails (입력 보안) 검증 100% 통과!")
-    print("   이제 configs/guardrail.config의 'guardrail_enabled': true로 설정하고,")
-    print("   Chainlit UI에서 탈옥 시도 차단을 직접 테스트하세요.")
+    print("   이제 Chainlit UI에서 탈옥 시도 차단을 직접 테스트하세요.")
     print("=" * 70)
     return True
 

@@ -118,11 +118,10 @@ Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `A
 import os
 import json
 from pathlib import Path
-import aiosqlite
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 
 from app.utils import init_chat_model
+from app.utils.database import get_shared_checkpointer
 from app.context import AgentContext
 from .prompt import SUPERVISOR_SYSTEM_PROMPT
 from .tools import tools_supervisor
@@ -161,16 +160,8 @@ async def create_agent_executor(checkpointer=None):
         temperature=model_cfg.get("temperature", 0.0)
     )
 
-    db_dir = "app/database"
-    os.makedirs(db_dir, exist_ok=True)
-    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
-
     if checkpointer is None:
-        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA busy_timeout=5000;")
-        checkpointer = AsyncSqliteSaver(conn)
-        await checkpointer.setup()
+        checkpointer = await get_shared_checkpointer()
 
     # 4. 도구 바인딩
     active_tools = list(tools_supervisor)

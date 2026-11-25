@@ -38,7 +38,11 @@ from .error_control import (
 )
 
 # --- Prompt Engineering (H-05) ---
-from .prompt.prompt_assembler import PromptAssembler, create_prompt_assembler_middleware
+from .prompt.prompt_assembler import (
+    PromptAssembler,
+    PromptAssemblerMiddleware,
+    create_prompt_assembler_middleware,
+)
 
 # --- Memory (Tier 2) ---
 from .memory.semantic_store import SemanticMemoryStore
@@ -76,6 +80,7 @@ __all__ = [
     "AbortToolsMiddleware",
     # Prompt Engineering
     "PromptAssembler",
+    "PromptAssemblerMiddleware",
     "create_prompt_assembler_middleware",
     # Memory
     "SemanticMemoryStore",
