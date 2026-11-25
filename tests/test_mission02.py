@@ -1,12 +1,12 @@
 """
-tests/test_main_agent.py
+tests/test_mission02.py
 
 🎯 Mission 02 자동화 검증 스크립트
 main_agent의 4대 하네스 요소(메타데이터, Self-Recovery 미들웨어, Subagent/Planning 도구, 체크포인터)가
 정상적으로 구현 및 결합되었는지 검증합니다.
 
 실행 방법:
-  python tests/test_main_agent.py
+  python tests/test_mission02.py
 """
 
 import os
@@ -61,7 +61,7 @@ async def run_main_agent_test():
     has_call_limit = any("ModelCallLimit" in n for n in nodes)
     assert has_call_limit, (
         "❌ Self-Recovery 미들웨어(ModelCallLimitMiddleware)가 등록되지 않았습니다.\n"
-        "   main_agent.py의 middleware 리스트에 ModelCallLimitMiddleware를 추가하세요."
+        "   app/agents/main_agent/agent.py의 middleware 리스트에 ModelCallLimitMiddleware를 추가하세요."
     )
     print(f"  ✅ Test 4 통과: Self-Recovery 미들웨어 정상 탑재 확인 (활성 노드: {len(nodes)}개)")
 

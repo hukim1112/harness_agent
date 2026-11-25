@@ -3,8 +3,8 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (�
 
 교육생은 missions/ 가이드의 안내에 따라 이 파일에 하네스 기능을 순서대로 결합해 나갑니다.
 - Mission 02: 자가 복구(Self-Recovery) 미들웨어 & 오케스트레이션 도구 장착
-- Mission 03: 5계층 프롬프트 조립기 & 계층형 메모리(Semantic/Episodic) 결합
-- Mission 04: 전문 금융 스킬(10종) 카탈로그 동적 주입
+- Mission 03: 프롬프트 조립기(PromptAssembler) & 계층형 메모리(Semantic/Episodic) 결합
+- Mission 04: 전문 금융 스킬(10종) 카탈로그 동적 주입 및 Skill Delta 감지
 - Mission 05: Human-in-the-Loop 권한 승인 게이트 장착
 - Mission 06: 입력 보안 가드레일 장착
 - Mission 07: 비동기 JSONL 감사 로깅(AgentLogTracer) 장착
@@ -13,11 +13,10 @@ app/agents/main_agent/agent.py — 메인 오케스트레이터 에이전트 (�
 import os
 import json
 from pathlib import Path
-import aiosqlite
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 
 from app.utils import init_chat_model
+from app.utils.database import get_shared_checkpointer
 from app.context import AgentContext
 from .prompt import SUPERVISOR_SYSTEM_PROMPT
 from .tools import tools_supervisor
@@ -54,23 +53,15 @@ async def create_agent_executor(checkpointer=None):
         temperature=model_cfg.get("temperature", 0.0)
     )
 
-    # 3. L1 단기 기억 (SQLite 기반 세션 체크포인터)
-    db_dir = "app/database"
-    os.makedirs(db_dir, exist_ok=True)
-    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
-
+    # 3. L1 단기 기억 (공유 SQLite 체크포인터 SSOT)
     if checkpointer is None:
-        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA busy_timeout=5000;")
-        checkpointer = AsyncSqliteSaver(conn)
-        await checkpointer.setup()
+        checkpointer = await get_shared_checkpointer()
 
     # 4. 도구 바인딩
     #    - Mission 02: list(tools_supervisor)
-    #    - Mission 03: list(tools_supervisor) + [roll_dice, convert_currency]
-    #      (※ memory, session_recall 도구는 MemoryMiddleware가 create_agent에 자동 등록)
-    #    ※ PromptAssembler(tool_schemas=active_tools)에서 참조하므로 미들웨어보다 먼저 선언합니다.
+    #    - Mission 03: list(tools_supervisor) + list(CUSTOM_TOOLS)
+    #      (※ memory, session_search, session_recall 도구는 MemoryMiddleware가 create_agent에 자동 등록)
+    #    ※ 도구 스키마는 create_agent(tools=...)가 자동 삽입하며 PromptAssemblerMiddleware가 이름순 정렬합니다.
     active_tools = []
 
     # 5. 미들웨어 파이프라인

@@ -11,7 +11,7 @@
 
 | 파일 경로 | 역할 | 실습 중 관찰 및 확인할 내용 |
 | :--- | :--- | :--- |
-| `app/agents/chatbot.py` | 에이전트 팩토리 | 3대 코어 요소(시스템 프롬프트 `CHATBOT_SYSTEM_PROMPT`, 도구, 단기기억) 및 서비스 메타데이터(프로필) 조립 구조 확인 |
+| `app/agents/chatbot/` (`agent.py`, `prompt.py`, `tools.py`) | 에이전트 패키지 | 3대 코어 요소(시스템 프롬프트 `CHATBOT_SYSTEM_PROMPT`, 도구, 단기기억) 및 서비스 메타데이터(프로필) 조립 구조 확인 |
 | `app/server.py` | FastAPI 백엔드 서버 | `app/agents/` 디렉토리 자동 스캔 및 SSE 스트리밍 서빙 |
 | `app/chainlit_ui.py` | Chainlit 프론트엔드 UI | 서버에서 에이전트 프로필을 동적으로 불러와 렌더링 |
 
@@ -19,7 +19,7 @@
 
 ## 🧩 에이전트 코어 3요소와 서비스 인터페이스 (하네스 구조)
 
-`app/agents/chatbot.py` 파일을 열어보면 에이전트가 **에이전트의 본질적인 3대 코어 요소(프롬프트, 도구, 메모리)**와 이를 **웹 서비스 및 UI에 연동하기 위한 메타데이터(프로필)**로 조립되어 있음을 확인할 수 있습니다.
+`app/agents/chatbot/` 패키지(`agent.py`, `prompt.py`, `tools.py`)를 열어보면 에이전트가 **에이전트의 본질적인 3대 코어 요소(프롬프트, 도구, 메모리)**와 이를 **웹 서비스 및 UI에 연동하기 위한 메타데이터(프로필)**로 조립되어 있음을 확인할 수 있습니다.
 
 ```mermaid
 graph TD
@@ -85,7 +85,7 @@ chainlit run app/chainlit_ui.py --port 8080
    - **Username**: `user`
    - **Password**: `1234`
 3. 화면 좌측 상단(또는 중앙)의 **Chat Profile** 선택 메뉴에서 **`chatbot`**을 선택합니다.
-   - `chatbot.py`의 `AGENT_METADATA["description"]`에 적힌 설명문이 그대로 표출되는 것을 확인하세요!
+   - `app/agents/chatbot/agent.py`의 `AGENT_METADATA["description"]`에 적힌 설명문이 그대로 표출되는 것을 확인하세요!
 
 ---
 

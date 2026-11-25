@@ -51,7 +51,7 @@
 `app/agents/main_agent/agent.py`를 열고, `configs/guardrail.config`가 활성화(`guardrail_enabled: true`)되었을 때 `InputSafetyGuardrail`을 미들웨어 파이프라인에 장착합니다.
 
 > 📌 **미들웨어 파이프라인 위치 안내** (상세 순서: [`MIDDLEWARE_PIPELINE_REFERENCE.md`](./MIDDLEWARE_PIPELINE_REFERENCE.md) 참고):  
-> 악의적인 프롬프트 인젝션은 **메모리 검색(`MemoryMiddleware.before_agent`), 프롬프트 조립(`PromptAssembler`), 메인 LLM 추론이나 도구 실행이 일어나기 전에 가장 먼저 차단**해야 합니다.  
+> 악의적인 프롬프트 인젝션은 **Semantic 스냅샷 로드(`MemoryMiddleware.before_agent`), 프롬프트 조립(`PromptAssembler`), 메인 LLM 추론이나 도구 실행이 일어나기 전에 가장 먼저 차단**해야 합니다.  
 > `InputSafetyGuardrail`은 `before_agent` 훅(`jump_to="end"`)에서 동작하므로, **`(3) Memory & Prompt`보다 앞(바깥쪽)**에 배치하면 차단 시 메모리 인출과 모델 호출을 모두 건너뛰고 즉시 종료됩니다! (차단된 턴은 `transcript.db`에 `kind="blocked"`로 기록되어 일반 검색·요약에서 제외됩니다.)
 
 1. 파일 상단에 가드레일 미들웨어 임포트를 추가합니다:
@@ -85,17 +85,21 @@
 import os
 import json
 from pathlib import Path
-import aiosqlite
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 
 from app.utils import init_chat_model
+from app.utils.database import get_shared_checkpointer
 from app.context import AgentContext
 from .prompt import SUPERVISOR_SYSTEM_PROMPT
 from .tools import tools_supervisor
-from app.tools.custom_tools import roll_dice, convert_currency
-from app.middleware.memory import SemanticMemoryStore, EpisodicStore, MemoryMiddleware
+from app.tools.custom_tools import CUSTOM_TOOLS
+from app.middleware.memory import (
+    SemanticMemoryStore,
+    TranscriptStore,
+    EpisodicStore,
+    MemoryMiddleware,
+)
 from app.middleware.prompt import PromptAssembler, SkillPromptBuilder, create_prompt_assembler_middleware
 from app.middleware.error_control.self_recovery import (
     ModelFallbackMiddleware,
@@ -133,20 +137,13 @@ async def create_agent_executor(checkpointer=None):
         temperature=model_cfg.get("temperature", 0.0)
     )
 
-    db_dir = "app/database"
-    os.makedirs(db_dir, exist_ok=True)
-    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
-
     if checkpointer is None:
-        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA busy_timeout=5000;")
-        checkpointer = AsyncSqliteSaver(conn)
-        await checkpointer.setup()
+        checkpointer = await get_shared_checkpointer()
 
     memory_cfg = _load_config("./configs/memory.config", {})
     sem_cfg = memory_cfg.get("semantic_memory", {})
     epi_cfg = memory_cfg.get("episodic_memory", {})
+    tr_cfg = memory_cfg.get("transcript", {})
 
     memory_dir = sem_cfg.get("memory_dir", "./artifacts/users/default/memory")
     os.makedirs(memory_dir, exist_ok=True)
@@ -157,9 +154,20 @@ async def create_agent_executor(checkpointer=None):
     )
     semantic_store.load_from_disk()
 
-    episodic_db_path = epi_cfg.get("db_path", os.path.join(db_dir, "episodic.db"))
+    transcript_db_path = tr_cfg.get("db_path", "./app/database/transcript.db")
+    os.makedirs(os.path.dirname(transcript_db_path) or ".", exist_ok=True)
+    transcript_store = TranscriptStore(
+        db_path=transcript_db_path,
+        recall_max_chars=int(tr_cfg.get("recall_max_chars", 2000)),
+    )
+    await transcript_store.setup()
+
+    episodic_db_path = epi_cfg.get("db_path", "./app/database/episodic.db")
     os.makedirs(os.path.dirname(episodic_db_path) or ".", exist_ok=True)
-    episodic_store = EpisodicStore(db_path=episodic_db_path)
+    episodic_store = EpisodicStore(
+        db_path=episodic_db_path,
+        transcript_store=transcript_store,
+    )
     await episodic_store.setup()
 
     memory_mw = MemoryMiddleware(
@@ -167,8 +175,12 @@ async def create_agent_executor(checkpointer=None):
         episodic_store=episodic_store,
         review_llm=llm,
         top_k=epi_cfg.get("top_k_prefetch", 2),
+        transcript_store=transcript_store,
+        transcript_enabled=tr_cfg.get("enabled", True),
+        finalize_idle_settle_s=float(epi_cfg.get("finalize_idle_settle_s", 15.0)),
+        finalize_max_age_s=float(epi_cfg.get("finalize_max_age_s", 1800.0)),
     )
-    active_tools = list(tools_supervisor) + [roll_dice, convert_currency]
+    active_tools = list(tools_supervisor) + list(CUSTOM_TOOLS)
 
     skill_guidelines = str(SKILLS_DIR / "SKILL.md") if (SKILLS_DIR / "SKILL.md").exists() else None
     skill_builder = SkillPromptBuilder(
@@ -177,11 +189,11 @@ async def create_agent_executor(checkpointer=None):
     )
 
     assembler = PromptAssembler(
-        system_rules=SUPERVISOR_SYSTEM_PROMPT,
-        tool_schemas=active_tools,
-        skill_catalog=skill_builder.assemble,
+        system_prompt=SUPERVISOR_SYSTEM_PROMPT,
+        skill_guidelines=skill_builder.load_guidelines,
+        skill_provider=skill_builder.list_skills,
     )
-    prompt_mw = create_prompt_assembler_middleware(assembler, merge_system=True)
+    prompt_mw = create_prompt_assembler_middleware(assembler)
 
     middleware = []
 

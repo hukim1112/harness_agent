@@ -37,7 +37,10 @@ async def run_mission05_test():
     
     with open(hitl_config_path, "r", encoding="utf-8") as f:
         hitl_cfg = json.load(f)
-    
+
+    assert hitl_cfg.get("hitl_enabled") is True, (
+        "❌ configs/hitl.config의 'hitl_enabled'가 true로 설정되어 있지 않습니다. Mission 05 1단계를 확인하세요."
+    )
     interrupt_on = hitl_cfg.get("interrupt_on", {})
     assert "roll_dice" in interrupt_on, (
         "❌ hitl.config의 'interrupt_on' 대상에 'roll_dice'가 지정되어 있지 않습니다."
@@ -125,9 +128,21 @@ async def run_mission05_test():
     )
     resume_reject = Command(resume={"decisions": [{"type": "reject"}]})
     res_rejected = await hitl_agent.ainvoke(resume_reject, config=config_reject)
-    
+
+    reject_tool_msgs = [
+        m for m in res_rejected["messages"]
+        if getattr(m, "type", "") == "tool" and getattr(m, "name", "") == "roll_dice"
+    ]
+    assert reject_tool_msgs, (
+        f"❌ 거부(Reject) 후 roll_dice ToolMessage 거절 기록이 없습니다: {res_rejected['messages']}"
+    )
+    assert all("🎲" not in str(m.content) for m in reject_tool_msgs), (
+        f"❌ 거부(Reject) 결정에도 roll_dice 도구가 실제 실행되었습니다: {[m.content for m in reject_tool_msgs]}"
+    )
+
     reject_msg = res_rejected["messages"][-1].content
     reject_msg_str = normalize_content(reject_msg)
+    print(f"  ℹ️ 거절 ToolMessage: {str(reject_tool_msgs[-1].content).strip()[:100]}")
     print(f"  ℹ️ 거절 피드백 메시지: {reject_msg_str.strip()[:100]}...")
     print("  ✅ Test 5 통과: [거부(Reject)] 결정 주입 시 도구 미실행 및 거절 응답 완료")
 
@@ -136,8 +151,7 @@ async def run_mission05_test():
 
     print("\n" + "=" * 70)
     print("🎉 [Mission 05] Human-in-the-Loop (roll_dice 권한 게이트) 100% 통과!")
-    print("   이제 configs/hitl.config의 'hitl_enabled': true로 설정하고,")
-    print("   Chainlit UI에서 주사위 굴리기 시 승인/거부 팝업을 직접 테스트하세요.")
+    print("   이제 Chainlit UI에서 주사위 굴리기 시 승인/거부 팝업을 직접 테스트하세요.")
     print("=" * 70)
     return True
 

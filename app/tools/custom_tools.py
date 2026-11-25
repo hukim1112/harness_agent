@@ -1,37 +1,67 @@
 """
 app/tools/custom_tools.py
 
-🎯 Mission 01: 나만의 커스텀 도구(Custom Tool) 작성하기
-missions/01_mission_add_custom_tool.md 가이드를 참고하여, 
-LangChain의 @tool 데코레이터를 이용해 에이전트가 호출할 수 있는 도구 함수를 작성하세요.
+🎯 Mission 01: ACI(Agent-Computer Interface) 철학 기반 커스텀 도구 작성하기
+missions/01_mission_add_custom_tool.md 가이드를 참고하여,
+모델이 컴퓨터와 안전하고 효율적으로 상호작용할 수 있는 ACI 커스텀 도구를 작성하세요.
 
-[핵심 팁]
-1. @tool(parse_docstring=True)를 적용합니다.
-2. Docstring의 첫 줄에는 도구의 목적을 명확히 작성합니다.
-3. 언제 이 도구를 호출해야 하는지 '트리거 조건(호출 규칙)'을 반드시 Docstring에 명시합니다.
-4. Args: 섹션에 각 파라미터의 타입과 설명을 작성합니다.
+[좋은 도구의 4대 설계 원칙 (ACI)]
+1. 정답 반환 & 컨텍스트 제한: 구조화된 결과를 반환하되, 대량 결과는 요약/절단하여 컨텍스트 오염 방지
+2. 제약 사항 & 안정성 (Poka-yoke): Pydantic `BaseModel` + `Field(ge/le)` · `Literal[...]`로 잘못된 호출 사전 차단
+3. 예외 처리 & 오류 피드백: `ToolException` + `<도구>.handle_tool_error = True`로 크래시 대신 수정 힌트 반환
+4. 설명 & 인자 정의의 조화: `Usage:`와 `When NOT to use:` 경계를 명시하고 `Args:` 중복은 피함
 """
 
 import random
-from langchain_core.tools import tool
+from collections import Counter
+from typing import Literal
+
+from langchain_core.tools import ToolException, tool
+from pydantic import BaseModel, Field
 
 
 # -------------------------------------------------------------------------------
-# TODO: 필수 커스텀 도구 2종(roll_dice, convert_currency)을 아래에 작성하세요.
+# TODO ① [필수] 주사위 굴리기 도구 `roll_dice`를 ACI 원칙에 맞게 구현하세요.
 #
-# ⚠️ [주의] 자동화 검증 스크립트(test_mission01.py, test_mission05.py, test_mission07.py, test_final.py)에서
-# 다음 두 함수 이름과 인자 규격을 직접 호출하여 검증하므로 2가지 모두 필수로 구현해야 합니다:
-#   1) 주사위 굴리기: roll_dice(num_dice: int = 1, sides: int = 6) -> str
-#   2) 환율 계산기  : convert_currency(amount: float, from_currency: str = "USD", to_currency: str = "KRW") -> str
-# (위 2가지를 작성한 뒤, 로또 번호 추천 등 나만의 추가 도구를 더 만들어도 좋습니다!)
+# ⚠️ [주의] 자동화 검증 스크립트(test_mission01.py)와 이후 미션(Mission 03, 05, 07, 08)에서
+# `roll_dice`와 `CUSTOM_TOOLS`를 직접 참조하므로 반드시 아래 규격으로 구현해야 합니다:
+#   - 스키마(RollDiceInput):
+#       * num_dice: int = Field(default=1, ge=1, le=100, description="...")
+#       * sides: int = Field(default=6, ge=4, le=100, description="...")
+#   - 컨텍스트 제한: 20개 이하는 개별 눈 목록+통계, 21~100개는 개별 목록 생략 후 통계 요약만 반환
+#   - 오류 피드백: 잘못된 입력 시 ToolException 발생 + roll_dice.handle_tool_error = True 설정
 # -------------------------------------------------------------------------------
 
-# @tool(parse_docstring=True)
+# class RollDiceInput(BaseModel):
+#     num_dice: int = Field(default=1, ge=1, le=100, description="...")
+#     sides: int = Field(default=6, ge=4, le=100, description="...")
+#
+#
+# @tool(args_schema=RollDiceInput)
 # def roll_dice(num_dice: int = 1, sides: int = 6) -> str:
-#     """도구에 대한 설명문 및 호출 조건을 작성하세요.
+#     """표준 다면체 주사위를 굴려 무작위 결과와 통계를 반환합니다.
 #
-#     Args:
-#         num_dice: 굴릴 주사위 개수 (기본값: 1, 최대: 10)
-#         sides: 주사위의 면 수 (기본값: 6, 예: 6, 12, 20)
+#     Usage:
+#     - ...
+#     - When NOT to use: ...
 #     """
-#     return "도구 실행 결과"
+#     ...
+#
+# roll_dice.handle_tool_error = True
+
+
+# -------------------------------------------------------------------------------
+# TODO ② [Optional] 스스로 만들고 싶은 나만의 커스텀 도구를 자유롭게 추가해 보세요!
+#
+# 챗봇에게 쥐어주고 싶은 도구가 있다면 ACI 4대 원칙(Pydantic 스키마·제약 조건·컨텍스트 제한·
+# ToolException + `<도구>.handle_tool_error = True`·Usage/When NOT to use 설명)에 맞춰 구현한 뒤
+# 아래 `CUSTOM_TOOLS` 리스트에 함께 등록하고 Chainlit UI에서 대화로 트리거링해 보세요.
+# -------------------------------------------------------------------------------
+
+
+# 구현 완료 후 작성한 도구 객체를 CUSTOM_TOOLS 리스트에 등록하세요. (예: [roll_dice])
+CUSTOM_TOOLS = []
+
+__all__ = [
+    "CUSTOM_TOOLS",
+]

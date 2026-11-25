@@ -1,20 +1,27 @@
 """
-app/agents/chatbot.py — 3대 코어 요소 및 서비스 메타데이터가 탑재된 챗봇 에이전트
+app/agents/chatbot/agent.py — 3대 코어 요소 및 서비스 메타데이터가 탑재된 챗봇 에이전트
+
+패키지 구조:
+  app/agents/chatbot/
+   ├── __init__.py    (create_agent_executor, AGENT_METADATA, CHATBOT_SYSTEM_PROMPT, tools_chatbot)
+   ├── agent.py       (에이전트 조립 및 팩토리)
+   ├── prompt.py      (CHATBOT_SYSTEM_PROMPT)
+   └── tools.py       (범용 9대 도구 바인딩)
 
 [하네스 구성 요소]
-1. 코어 3요소: 프롬프트(CHATBOT_SYSTEM_PROMPT), 도구(active_tools), 단기기억(AsyncSqliteSaver)
+1. 코어 3요소: 프롬프트(CHATBOT_SYSTEM_PROMPT), 도구(active_tools), 단기기억(공유 SQLite 체크포인터)
 2. 서비스 인터페이스: AGENT_METADATA (UI 프로필 및 FastAPI 레지스트리)
 """
 
 import os
 import json
-import aiosqlite
-from datetime import date
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain.agents import create_agent
+
 from app.utils import init_chat_model
-from app.tools import tools_chatbot
+from app.utils.database import get_shared_checkpointer
 from app.context import AgentContext
+from .prompt import CHATBOT_SYSTEM_PROMPT
+from .tools import tools_chatbot
 
 # -------------------------------------------------------------------------------
 # 1. 서비스 메타데이터 (FastAPI 레지스트리 및 Chainlit UI ChatProfile 자동 등록)
@@ -25,21 +32,12 @@ AGENT_METADATA = {
     "roles": ["main"],  # main: UI 대화 전용 (서브에이전트 위임 대상 제외)
 }
 
-CHATBOT_SYSTEM_PROMPT = f"""당신은 귀엽고 친밀한 고양이 페르소나를 가진 챗봇 에이전트입니다.
-사용자의 질문에 대해 재치있고 흥미롭게 대화를 하세요. 답변은 한국어로 제공하세요.
-
-[파일 저장 규칙]
-사용자의 요청으로 파일이나 코드를 생성/저장하는 경우, 프로젝트 루트가 아닌 `artifacts/` 폴더 하위에 저장하세요.
-
-오늘의 날짜 : {date.today().strftime("%Y-%m-%d")}
-"""
-
 # -------------------------------------------------------------------------------
 # 🎯 [Mission 01 실습 안내]
-# 1단계에서 app/tools/custom_tools.py에 작성한 도구를 여기에 임포트하세요.
-# 예시: from app.tools.custom_tools import roll_dice, convert_currency
+# 1단계에서 app/tools/custom_tools.py에 작성한 CUSTOM_TOOLS를 여기에 임포트하세요.
+# 예시: from app.tools.custom_tools import CUSTOM_TOOLS
 # -------------------------------------------------------------------------------
-# from app.tools.custom_tools import ...
+# from app.tools.custom_tools import CUSTOM_TOOLS
 
 
 def _load_config(path: str, default: dict) -> dict:
@@ -63,27 +61,19 @@ async def create_agent_executor(checkpointer=None):
         model=model_cfg.get("model_name", "gemini-3.8-flash"),
         temperature=model_cfg.get("temperature", 0.0)
     )
-    
-    # 3. 단기 기억 (SQLite 기반 대화 세션 체크포인터)
-    db_dir = "app/database"
-    os.makedirs(db_dir, exist_ok=True)
-    checkpoints_path = os.path.join(db_dir, "checkpoints.db")
 
+    # 3. 단기 기억 (공유 SQLite 체크포인터 SSOT)
     if checkpointer is None:
-        conn = await aiosqlite.connect(checkpoints_path, check_same_thread=False)
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA busy_timeout=5000;")
-        checkpointer = AsyncSqliteSaver(conn)
-        await checkpointer.setup()
-    
+        checkpointer = await get_shared_checkpointer()
+
     # ---------------------------------------------------------------------------
     # 4. 도구 바인딩
     # 🎯 [Mission 01 실습 안내]
-    # custom_tools에서 임포트한 도구를 active_tools 리스트에 결합하세요.
-    # 예시: active_tools = list(tools_chatbot) + [roll_dice, convert_currency]
+    # custom_tools에서 임포트한 CUSTOM_TOOLS를 active_tools 리스트에 결합하세요.
+    # 예시: active_tools = list(tools_chatbot) + list(CUSTOM_TOOLS)
     # ---------------------------------------------------------------------------
     active_tools = list(tools_chatbot)
-    
+
     # 5. 하네스로 결합된 최종 에이전트 인스턴스 구축
     return create_agent(
         model=llm,

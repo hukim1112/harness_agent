@@ -2,25 +2,23 @@
 ===============================================================================
 Skill Prompt Builder — Frontmatter Scanner & Dynamic Catalog Builder
 ===============================================================================
-Source: frontier-agent-lab/app/prompts/skill_builder.py
-
-스킬 행동 수칙(가이드라인) + 설치된 스킬 디렉토리(SKILL.md)의 YAML Frontmatter를
-스캔하여 <skills> 카탈로그를 동적으로 생성합니다.
+스킬 행동 수칙(가이드라인) + 설치된 스킬 디렉토리(SKILL.md / *.md)의 YAML Frontmatter를
+스캔하여 구조화된 스킬 목록(list_skills)과 <skills> 카탈로그(build_catalog)를 생성합니다.
 ===============================================================================
 """
 
 import os
 import re
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 class SkillPromptBuilder:
     """스킬 행동 수칙(가이드라인) + 설치된 스킬 카탈로그(프론트매터) 통합 조립기"""
 
-    DEFAULT_GUIDELINES = """## 🛠️ Progressive Skill Execution Policy
-1. 사용자의 요청을 해결할 수 있는 스킬이 아래 카탈로그에 있다면, raw 셸 명령보다 해당 스킬을 우선 활용하세요.
-2. 스킬을 사용하기 전, 반드시 `file_read`로 해당 스킬의 `SKILL.md`를 열람하여 정확한 파라미터와 스크립트 실행법을 파악하세요.
-3. 지침에 따라 `bash_command`로 스크립트를 실행하여 작업을 완료하세요."""
+    DEFAULT_GUIDELINES = """## Skill Execution Policy
+1. 사용자의 요청을 해결할 수 있는 스킬이 카탈로그에 있다면, raw 셸 명령보다 해당 스킬을 우선 활용하세요.
+2. 스킬을 사용하기 전, 반드시 `file_read`로 해당 스킬의 문서(`SKILL.md` 또는 `.md`)를 열람하여 정확한 파라미터와 실행법을 파악하세요.
+3. 지침에 따라 `bash_command`로 스크립트를 실행하거나 가이드 절차를 수행해 작업을 완료하세요."""
 
     def __init__(
         self,
@@ -39,7 +37,7 @@ class SkillPromptBuilder:
             # 1. --- ... --- 사이의 YAML Frontmatter 정규식 추출
             match = re.search(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
             if match:
-                meta = {}
+                meta: Dict[str, str] = {}
                 for line in match.group(1).strip().splitlines():
                     if ":" in line:
                         k, v = line.split(":", 1)
@@ -49,27 +47,19 @@ class SkillPromptBuilder:
 
             # 2. Frontmatter가 없을 때의 마크다운 폴백 (# Title 및 첫 문단)
             meta = {}
-            lines = [l.strip() for l in content.splitlines() if l.strip()]
-            for idx, line in enumerate(lines):
+            lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+            for line in lines:
                 if line.startswith("# ") and "name" not in meta:
                     meta["name"] = line.replace("# ", "").replace("Skill", "").strip()
                 elif not line.startswith("#") and not line.startswith("---") and "description" not in meta:
                     meta["description"] = line
-
             return meta
         except Exception:
             return {}
 
-    def build_catalog(self) -> str:
-        """설치된 모든 스킬 디렉토리(폴더형 SKILL.md 및 낱개 .md 스킬 문서)를 스캔하여 <skills> 카탈로그 텍스트 생성"""
-        catalog_entries = []
-        seen_paths = set()
-        guidelines_abs = (
-            os.path.normcase(os.path.abspath(self.guidelines_path))
-            if self.guidelines_path and os.path.exists(self.guidelines_path)
-            else None
-        )
-
+    def _scan_candidates(self) -> List[Tuple[str, str]]:
+        """스킬 디렉토리에서 (기본 이름, 문서 경로) 후보를 찾습니다 (폴더형 SKILL.md + 낱개 .md)."""
+        candidates: List[Tuple[str, str]] = []
         for base_dir in self.skills_dirs:
             if not os.path.exists(base_dir):
                 continue
@@ -78,8 +68,6 @@ class SkillPromptBuilder:
                 entries = sorted(os.listdir(base_dir))
             except Exception:
                 continue
-
-            candidates: List[Tuple[str, str]] = []  # (default_name, file_path)
 
             # 1. 낱개 마크다운 스킬 파일 (예: app/agents/analyst/skills/chart_patterns.md)
             for item_name in entries:
@@ -103,36 +91,101 @@ class SkillPromptBuilder:
                         candidates.append((folder_name, candidate))
                         break
 
-            for default_name, skill_file in candidates:
-                abs_key = os.path.normcase(os.path.abspath(skill_file))
-                if abs_key == guidelines_abs or abs_key in seen_paths:
-                    continue
+        return candidates
 
-                meta = self._extract_frontmatter(skill_file)
-                if not meta:
-                    continue
+    def _scan_signature(self) -> Tuple:
+        """스킬 디렉토리 변경 감지를 위한 경량 서명: (경로, mtime_ns, size) 정렬 튜플."""
+        sig = []
+        for base_dir in self.skills_dirs:
+            try:
+                st_dir = os.stat(base_dir)
+                sig.append((base_dir, st_dir.st_mtime_ns, st_dir.st_size))
+                with os.scandir(base_dir) as it:
+                    for entry in it:
+                        if entry.is_dir():
+                            for fname in ("SKILL.md", "Skill.md", "skill.md"):
+                                p = os.path.join(entry.path, fname)
+                                if os.path.exists(p):
+                                    st_f = os.stat(p)
+                                    sig.append((p, st_f.st_mtime_ns, st_f.st_size))
+                                    break
+                        elif entry.name.lower().endswith(".md"):
+                            st_f = entry.stat()
+                            sig.append((entry.path, st_f.st_mtime_ns, st_f.st_size))
+            except OSError:
+                sig.append((base_dir, None, None))
+        return tuple(sorted(sig, key=lambda x: x[0]))
 
-                seen_paths.add(abs_key)
-                name = meta.get("name", default_name)
-                desc = " ".join(meta.get("description", "No description provided.").split())
+    def list_skills(self) -> List[Dict[str, str]]:
+        """설치된 스킬을 [{"name", "description", "path"}] 목록으로 반환합니다 (이름순)."""
+        signature = self._scan_signature()
+        cached = getattr(self, "_list_cache", None)
+        if cached and cached[0] == signature:
+            return list(cached[1])
+
+        skills: List[Dict[str, str]] = []
+        seen_paths = set()
+        seen_names = set()
+        guidelines_abs = (
+            os.path.normcase(os.path.abspath(self.guidelines_path))
+            if self.guidelines_path and os.path.exists(self.guidelines_path)
+            else None
+        )
+
+        for default_name, skill_file in self._scan_candidates():
+            abs_key = os.path.normcase(os.path.abspath(skill_file))
+            if abs_key == guidelines_abs or abs_key in seen_paths:
+                continue
+
+            meta = self._extract_frontmatter(skill_file)
+            if not meta:
+                continue
+
+            name = meta.get("name", default_name)
+            if name in seen_names:
+                continue
+
+            seen_paths.add(abs_key)
+            seen_names.add(name)
+            try:
                 rel_path = os.path.relpath(skill_file).replace("\\", "/")
+            except ValueError:
+                rel_path = os.path.abspath(skill_file).replace("\\", "/")
 
-                catalog_entries.append(f"- **{name}** (`{rel_path}`):\n    {desc}")
+            skills.append({
+                "name": name,
+                "description": " ".join(meta.get("description", "No description provided.").split()),
+                "path": rel_path,
+            })
 
-        if not catalog_entries:
-            return "No custom skills currently registered in local `skills/` directory."
+        skills.sort(key=lambda s: s["name"])
+        self._list_cache = (signature, skills)
+        return list(skills)
 
-        return "<skills>\n" + "\n".join(catalog_entries) + "\n</skills>"
-
-    def assemble(self) -> str:
-        """가이드라인 + 카탈로그를 하나로 조립하여 Layer 2 주입용 문자열 반환"""
-        guidelines = self.DEFAULT_GUIDELINES
+    def load_guidelines(self) -> str:
+        """스킬 실행 지침(guidelines_path 파일, 없으면 기본 지침)을 반환합니다."""
         if self.guidelines_path and os.path.exists(self.guidelines_path):
             try:
                 with open(self.guidelines_path, "r", encoding="utf-8") as f:
-                    guidelines = f.read().strip()
+                    content = f.read().strip()
+                if content:
+                    return content
             except Exception:
                 pass
+        return self.DEFAULT_GUIDELINES
 
+    def build_catalog(self, skills: Optional[List[Dict[str, str]]] = None) -> str:
+        """스킬 목록을 <skills> 카탈로그 텍스트로 렌더링합니다."""
+        items = skills if skills is not None else self.list_skills()
+        catalog_entries = [
+            f"- **{s['name']}** (`{s['path']}`):\n    {s['description']}" for s in items
+        ]
+        if not catalog_entries:
+            return "No custom skills currently registered in local `skills/` directory."
+        return "<skills>\n" + "\n".join(catalog_entries) + "\n</skills>"
+
+    def assemble(self) -> str:
+        """가이드라인 + 카탈로그를 하나로 조립하여 반환합니다."""
+        guidelines = self.load_guidelines()
         catalog = self.build_catalog()
-        return f"{guidelines}\n\n### 📦 Available Skills Catalog (Indexed from Frontmatter)\n{catalog}"
+        return f"{guidelines}\n\n### Available Skills Catalog\n{catalog}"

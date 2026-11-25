@@ -20,7 +20,7 @@
 * **스킬 저장소 (스킬 풀)**: `artifacts/skills_pool/` (10종의 금융 전문 스킬 패키지 보관)
 * **런타임 활성 스킬 폴더**: `app/agents/main_agent/skills/` (main_agent가 실제로 인식하고 실행하는 내장 스킬 디렉토리)
   * 에이전트마다 자신의 `skills/` 폴더를 가집니다 (예: `app/agents/scraper/skills/`, `app/agents/analyst/skills/`).
-* **5계층 프롬프트 조립기**: `app/middleware/prompt/prompt_assembler.py` (Layer 2.2에 스킬 자동 주입)
+* **캐시 우선 4단 프롬프트 조립기**: `app/middleware/prompt/prompt_assembler.py` (`User Context`의 `# skillCatalog`에 초기 지침·목록 동결, 이후 변동분은 `skill_delta`로 대화 끝 주입)
 * **메인 오케스트레이터**: `app/agents/main_agent/agent.py` (`file_read`와 `bash_command`로 스킬 자율 실행)
 * **자동화 검증 스크립트**: `tests/test_mission04.py`
 
@@ -65,37 +65,29 @@ ls app/agents/main_agent/skills/
 
 ---
 
-### 2단계: 프롬프트 조립기의 자동 스캔 원리 이해하기
+### 2단계: 프롬프트 조립기의 자동 스캔 및 양방향 Delta 원리 이해하기
 
-우리가 Mission 03에서 구축한 5계층 프롬프트 조립기([`app/middleware/prompt/prompt_assembler.py`](app/middleware/prompt/prompt_assembler.py))는 에이전트 초기화 시 `SkillPromptBuilder`를 호출합니다.
+우리가 Mission 03에서 구축한 캐시 우선 4단 프롬프트 조립기([`app/middleware/prompt/prompt_assembler.py`](app/middleware/prompt/prompt_assembler.py))는 에이전트 초기화 시 `SkillPromptBuilder`를 연결합니다.
 
-`SkillPromptBuilder`는 `app/agents/main_agent/skills/` 폴더 내 모든 하위 폴더의 `SKILL.md`를 스캔하여 **상단의 YAML Frontmatter(`name`, `description`)만 추출**한 뒤 다음과 같이 **Layer 2.2**에 동적으로 카탈로그를 조립합니다:
+`SkillPromptBuilder`는 `app/agents/main_agent/skills/` 폴더 내 모든 하위 폴더의 `SKILL.md`를 스캔하여 **상단의 YAML Frontmatter(`name`, `description`)만 추출**한 뒤, **② 정적 `SystemMessage`에는 전혀 섞지 않고** 대화 맨 앞 **③ `User Context` (`<system-reminder>` `# skillCatalog`)** 안에 실행 지침(`## Skill Execution Policy`)과 함께 세션 시작 시 1회 동결하여 주입합니다:
 
 ```markdown
-=== Layer 2: Capabilities (Tools & Skills) ===
+# skillCatalog
+## Skill Execution Policy
+... (skills/SKILL.md 요약) ...
 
-## 🛠️ Layer 2.1: Registered Tool Capabilities (Alphabetical)
-[1] `bash_command`: Execute shell commands
-[2] `file_read`: Read files
-...
-
-## 📦 Layer 2.2: Available Skills Catalog & Execution Policy
-### 📦 Available Skills Catalog (Indexed from Frontmatter)
+The following skills are available. Before using a skill, read its documentation (path shown in parentheses) with `file_read`:
 <skills>
-- **pykrx-korean-market** (`app/agents/main_agent/skills/pykrx-korean-market/SKILL.md`):
-    국내 주식 및 시장 시세: KOSPI/KOSDAQ 종목 시세, 시가총액 순위, 외국인/기관 수급 동향...
-- **yfinance-market-data** (`app/agents/main_agent/skills/yfinance-market-data/SKILL.md`):
-    Comprehensive Yahoo Finance toolset for global stock quotes...
-- **mcp-client** (`app/agents/main_agent/skills/mcp/SKILL.md`):
-    Discover and call tools on any Model Context Protocol (MCP) server...
+- **pykrx-korean-market** (`app/agents/main_agent/skills/pykrx-korean-market/SKILL.md`): 국내 주식 및 시장 시세...
+- **yfinance-market-data** (`app/agents/main_agent/skills/yfinance-market-data/SKILL.md`): Comprehensive Yahoo Finance toolset...
+- **mcp-client** (`app/agents/main_agent/skills/mcp/SKILL.md`): Discover and call tools on any Model Context Protocol (MCP) server...
 ...
 </skills>
-
-__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__
 ```
 
-> 💡 **핵심 포인트**:  
-> 수천 줄에 달하는 스킬 코드 전체를 프롬프트에 넣지 않고, **이름과 1줄 설명만 카탈로그로 유지(1단계)**하므로 GPU KV-Cache를 완벽히 보존하고 토큰 비용을 90% 이상 절감합니다!
+> 💡 **핵심 포인트 (2가지)**:
+> 1. 수천 줄에 달하는 스킬 코드 전체를 프롬프트에 넣지 않고 **이름과 1줄 설명만 카탈로그로 유지**하므로 토큰 비용을 90% 이상 절감합니다.
+> 2. 세션 도중 새 스킬이 설치되거나 제거되더라도 앞단 `[01] User Context(# skillCatalog)`를 수정하지 않고, **④ 대화 맨 끝에만 `<system-reminder>` 양방향 `skill_delta` 알림**을 덧붙이므로 **KV-Cache 프리픽스가 100% 보존**됩니다!
 
 ---
 
@@ -110,19 +102,20 @@ python tests/test_mission04.py
 #### ✅ 기대 성공 출력:
 ```text
 ======================================================================
-🧪 [Mission 04] Progressive Skills 동적 확장 & 카탈로그 검증 시작
+🧪 [Mission 04] Progressive Skills 동적 확장 · 카탈로그 · Delta 검증 시작
 ======================================================================
   ✅ Test 1 통과: app/agents/main_agent/skills/ 내 금융 전문 스킬 및 SKILL.md 확인 (현재 탑재: 총 12종)
-  ✅ Test 2 통과: SkillPromptBuilder Frontmatter 스캔 및 카탈로그 생성 완료
-  ✅ Test 3 통과: Progressive Skill 실행 필수 도구 바인딩 확인 (file_read, bash_command)
+  ✅ Test 2 통과: SkillPromptBuilder Frontmatter 스캔 완료 (12종 인덱싱)
+  ✅ Test 3 통과: Static SystemMessage 불변 + User Context(# skillCatalog) 금융 스킬 자동 주입 확인
+  ✅ Test 4 통과: Progressive Skill 실행 필수 도구 바인딩 확인 (file_read, bash_command)
 
 ======================================================================
-🎨 [실물 시각화] main_agent 시스템 프롬프트(Layer 2.2)에 자동 주입된 스킬 카탈로그
+🎨 [실물 시각화] 세션 중 스킬 추가(+temp-fx-arbitrage)·제거(-alpha-vantage-finance) Delta 주입
 ======================================================================
-... (12종 스킬 카탈로그 목록 출력) ...
-======================================================================
+... (앞단 [00]~[02] 프리픽스 100% 캐시 유지 + 대화 끝 Human<skill_delta> 확인) ...
+  ✅ Test 5 통과: 양방향 Skill Delta(+추가/-제거) 발행 및 앞단 프리픽스 100% 보존 확인
 
-🎉 [Mission 04] Progressive Skills 동적 확장 & 카탈로그 검증 100% 통과!
+🎉 [Mission 04] Progressive Skills 동적 확장 · 카탈로그 · Skill Delta 검증 100% 통과!
 ```
 
 ---
@@ -158,7 +151,7 @@ Chainlit 웹 UI에서 `main_agent`에게 아래 질문들을 던지며, 에이�
   삼성전자(005930)와 SK하이닉스(000660)의 최근 1개월 종가 추이와 시가총액을 비교 분석해줘.
   ```
 * **동작 관찰 포인트**:
-  1. 에이전트가 Layer 2.2에서 `pykrx-korean-market` 스킬을 스스로 탐색합니다.
+  1. 에이전트가 `③ User Context (# skillCatalog)`에서 `pykrx-korean-market` 스킬을 스스로 탐색합니다.
   2. `file_read`로 `app/agents/main_agent/skills/pykrx-korean-market/SKILL.md`를 열람하여 실행 코드를 파악합니다.
   3. `bash_command`로 Python 스크립트를 실행하여 실시간 종가 추이 및 시가총액 데이터를 획득합니다.
   4. 양사의 시가총액과 최근 등락률을 한국어로 깔끔하게 정리해 브리핑합니다.
@@ -216,7 +209,7 @@ Chainlit 웹 UI에서 `main_agent`에게 아래 질문들을 던지며, 에이�
 
 - [ ] 도구(Tool)와 스킬(Skill)의 차이점 및 Progressive Disclosure 원리를 이해했다.
 - [ ] `artifacts/skills_pool/`의 금융 스킬들을 `app/agents/main_agent/skills/` 디렉토리로 성공적으로 복사했다.
-- [ ] `PromptAssembler`가 코드 수정 없이 `app/agents/main_agent/skills/`의 Frontmatter를 스캔하여 Layer 2.2에 카탈로그를 자동 주입함을 확인했다.
+- [ ] `PromptAssembler`가 코드 수정 없이 `app/agents/main_agent/skills/`의 Frontmatter를 스캔하여 `User Context (# skillCatalog)`에 자동 주입하고, 세션 중 변동분은 `skill_delta`로 전달함을 확인했다.
 - [ ] `main_agent`가 `file_read`와 `bash_command`를 통해 스킬 코드를 자율적으로 읽고 실행함을 확인했다.
-- [ ] `python tests/test_mission04.py`를 실행하여 3개 검증 테스트를 100% 통과했다.
+- [ ] `python tests/test_mission04.py`를 실행하여 5개 검증 테스트를 100% 통과했다.
 - [ ] Chainlit UI에서 국내/해외 주식, 거시경제 분석 및 Chart.js 인터랙티브 대시보드 인라인 렌더링을 확인했다.

@@ -1,0 +1,73 @@
+[
+  {
+    "id": "data-01",
+    "category": "단일 파일 조회 + 필터링",
+    "question": "artifacts/notebooks/data/laptops_market_data.json 파일을 읽고 무게가 1.3kg 이하이면서 평점(rating)이 4.9 이상인 노트북의 모델명과 가격(원)을 모두 알려주세요.",
+    "ground_truth": "조건(weight_kg <= 1.3 및 rating >= 4.9)을 만족하는 모델은 2종이다. ① LG전자 2026 그램 프로 16 (LP-002): 무게 1.19kg, 평점 4.9, 가격 1,890,000원. ② Apple MacBook Air 13 M3 (LP-005): 무게 1.24kg, 평점 4.9, 가격 1,590,000원.",
+    "target_tools": ["file_read"]
+  },
+  {
+    "id": "calc-01",
+    "category": "이종 파일 결합 + 수식 계산",
+    "question": "artifacts/notebooks/data/specs_criteria.json에 정의된 Value_Score 계산 공식을 artifacts/notebooks/data/laptops_market_data.json의 모든 모델에 적용하여, 추천 기준(상위 2개 모델)에 해당하는 모델명과 소수점 둘째 자리까지의 점수를 보고해주세요.",
+    "ground_truth": "Value_Score = (RAM_GB * 10 + SSD_GB / 10 + Rating * 20) / (Price_KRW / 100000) 기준 상위 2개 모델은 ① LP-001 레노버 아이디어패드 Slim 3 15IAH8: 50.95점 ((160 + 51.2 + 94) / 5.99), ② LP-004 한성컴퓨터 올데이롱 TFX5470UC: 43.72점 ((160 + 51.2 + 90) / 6.89)이다. (참고: LP-002 27.53점, LP-003 24.11점, LP-005 19.45점)",
+    "target_tools": ["file_read"]
+  },
+  {
+    "id": "cafe-01",
+    "category": "다중 파일 결합 + 가중 평균",
+    "question": "artifacts/notebooks/cafe_data/districts.json과 backup_survey.json을 분석해 ① weekend_traffic_boost가 1.3 이상이고 평당 월 임대료(monthly_rent_per_pyeong)가 250,000원 이하인 후보 상권들과 ② 설문 응답자 500명 전체의 가중 평균 객단가(원)를 알려주세요.",
+    "ground_truth": "① 조건을 만족하는 후보 상권은 성수동(weekend_traffic_boost 1.6, 월 임대료 220,000원)과 망원동(weekend_traffic_boost 1.3, 월 임대료 150,000원) 2곳이다. ② 500명 가중 평균 객단가는 0.42*6500 + 0.28*12000 + 0.18*5500 + 0.12*4800 = 2730 + 3360 + 990 + 576 = 7,656원이다.",
+    "target_tools": ["file_read"]
+  },
+  {
+    "id": "code-01",
+    "category": "코드베이스 심볼 탐색",
+    "question": "app/utils/message_markers.py 파일을 확인하여 하네스가 메시지에 기록하는 ORIGIN_* 상수 값 목록(harness_origin 값들)과 실제 사용자 턴 시작을 판별하는 함수 이름 및 판별 기준을 설명해주세요.",
+    "ground_truth": "app/utils/message_markers.py에는 ORIGIN_COMPACTION_SUMMARY('compaction_summary'), ORIGIN_STOP_HOOK('stop_hook_feedback'), ORIGIN_EVALUATOR_FEEDBACK('evaluator_feedback'), ORIGIN_USER_CONTEXT('user_context'), ORIGIN_SKILL_DELTA('skill_delta'), ORIGIN_EPISODIC_MEMORY('episodic_memory'), ORIGIN_DATE_CHANGE('date_change') 상수가 정의되어 있으며, 실제 사용자 턴 시작은 is_user_turn_start(msg) 함수가 HumanMessage이면서 message_origin(msg)가 None인 경우(출처 표식이 없는 경우)로 판별한다.",
+    "target_tools": ["file_read | grep_search"]
+  },
+  {
+    "id": "cfg-01",
+    "category": "설정 파일 전수 탐색",
+    "question": "configs/ 디렉토리의 설정 파일들을 확인하여 model.config의 model_name, compaction.config의 summarization.trigger_tokens, hitl.config의 interrupt_on 대상 도구 이름을 정리해주세요.",
+    "ground_truth": "configs/model.config의 model_name은 'gemini-3.8-flash', configs/compaction.config의 summarization.trigger_tokens는 24000, configs/hitl.config의 interrupt_on 대상 도구는 'roll_dice'다.",
+    "target_tools": ["glob_search | file_read", "file_read"]
+  },
+  {
+    "id": "err-01",
+    "category": "손상 파일 장애 복구",
+    "question": "artifacts/notebooks/data/corrupted_catalog.bin 파일에서 노트북 가격 목록을 확인해 보고해주세요. 만약 해당 파일이 손상되었거나 읽을 수 없다면 같은 폴더의 대체 파일을 찾아 가격 목록과 원본 파일 실패 원인을 함께 보고해주세요.",
+    "ground_truth": "corrupted_catalog.bin 파일에는 손상 오류 문자열([CORRUPTED_LEGACY_BINARY_BLOB_ERROR_0xDEADBEEF_CANNOT_PARSE])만 들어 있어 카탈로그 데이터를 파싱할 수 없으며, 같은 폴더의 backup_laptops_catalog.json에서 복구한 3개 모델 가격은 LP-001 레노버 아이디어패드 Slim 3 15IAH8 599,000원, LP-002 LG전자 2026 그램 프로 16 1,890,000원, LP-003 ASUS ROG 제피러스 G14 2,150,000원이다.",
+    "target_tools": ["file_read", "glob_search | file_read"]
+  },
+  {
+    "id": "art-01",
+    "category": "파일 산출물 생성 + 상태 검증",
+    "question": "artifacts/notebooks/cafe_data/districts.json을 읽어 각 상권의 임대료 대비 유동인구 효율(daily_foot_traffic / monthly_rent_per_pyeong)을 계산한 뒤, 효율 내림차순으로 정렬한 JSON 배열(각 항목에 district, efficiency 키 포함)을 '{output_dir}/cafe_efficiency.json' 파일에 저장하고 1위 상권과 효율 수치를 보고해주세요.",
+    "ground_truth": "계산된 효율 내림차순 1위는 홍대입구(85000 / 280000 = 약 0.3036)이며, 그 뒤로 성수동(약 0.2818), 망원동(약 0.2533), 삼성역(약 0.2214), 여의도(약 0.2029) 순이다. 정렬된 JSON 배열이 지정된 '{output_dir}/cafe_efficiency.json' 경로에 실제로 저장되어야 한다.",
+    "expected_artifact": "{output_dir}/cafe_efficiency.json",
+    "target_tools": ["file_read", "file_writer | bash_command"]
+  },
+  {
+    "id": "plan-01",
+    "category": "계획 모드 프로토콜 준수",
+    "question": "카페 상권 분석 프로젝트를 위해 먼저 읽기 전용 계획 모드(enter_plan, intent='new')에 진입하여 artifacts/notebooks/cafe_data/districts.json과 scoring_weights.json을 조사한 뒤, 3단계 이상의 실행 계획을 확정(exit_plan)하고 task_create로 첫 번째 하위 과제를 등록한 다음 계획 이름과 등록된 과제 요약을 보고해주세요.",
+    "ground_truth": "enter_plan(intent='new') 호출 후 districts.json 및 scoring_weights.json을 읽고, 3단계 이상이 포함된 계획으로 exit_plan을 호출한 뒤, task_create로 첫 번째 태스크를 등록하고 그 결과(계획명 및 생성된 태스크 ID/내용)를 보고해야 한다.",
+    "target_tools": ["enter_plan", "file_read", "exit_plan", "task_create"]
+  },
+  {
+    "id": "skill-01",
+    "category": "Progressive Skills 동적 발견",
+    "question": "당신의 스킬 카탈로그에 있는 pdf-processing 스킬 문서를 직접 읽어 PDF에서 텍스트를 추출하는 스크립트 파일명(경로)들과 필수 실행 인자(--path 등)를 정확히 정리해주세요.",
+    "ground_truth": "app/agents/main_agent/skills/pdf_processing/SKILL.md에 정의된 텍스트 추출 스크립트는 app/agents/main_agent/skills/pdf_processing/scripts/pdf_extractor.py(텍스트+메타데이터)와 pdf2text.py(전체 원시 텍스트)이며, 두 스크립트 모두 필수 인자로 --path [PDF_PATH]를 받는다.",
+    "target_tools": ["file_read"]
+  },
+  {
+    "id": "neg-01",
+    "category": "존재하지 않는 데이터 (과잉 탐색 · 환각 방지)",
+    "question": "artifacts/notebooks/data/smartphones_market_data.json 파일을 읽어 2026년 최신 스마트폰 가격과 스펙을 정리해주세요. 만약 해당 경로에 파일이 없다면 artifacts/ 폴더 내에 다른 이름으로 옮겨졌거나 대체 파일이 있는지도 확인해 주세요.",
+    "ground_truth": "artifacts/notebooks/data/ 폴더 및 artifacts/ 전체에는 smartphones_market_data.json 파일이나 스마트폰 가격/스펙 데이터가 존재하지 않는다(노트북 데이터 및 카페 상권 데이터만 존재). 없는 가격이나 스펙을 지어내지 않고 확인되지 않는다고 명확히 답해야 한다.",
+    "target_tools": ["file_read", "glob_search | file_read"]
+  }
+]

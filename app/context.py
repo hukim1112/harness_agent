@@ -13,7 +13,8 @@ class AgentContext:
     parent_session_id: str = ""
     user_id: str = "default"
     workspace_dir: str = ""
-    recalled_memory: str = ""
+    memory_snapshot: str = ""          # 세션 시작 시 동결된 장기기억 스냅샷 (MEMORY.md + USER.md → User Context)
+    recalled_memory: str = ""          # 하위 호환 alias (memory_snapshot과 동일)
 
     # ── HITL 제어 ──
     hitl_enabled: bool = False
