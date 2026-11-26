@@ -43,6 +43,15 @@ graph LR
 메인 에이전트 혼자서 크롤링, 데이터 분석, 보고서 작성까지 모든 도구를 다 쓰려 하면 컨텍스트가 폭발합니다.  
 Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `AGENT_METADATA["roles"]`에 `"sub"` 역할이 부여된 전문 에이전트(`scraper`, `analyst`)에게 독립된 세션으로 작업을 위임한 뒤 요약 보고서만 회수합니다. (`main_agent`, `chatbot`처럼 `"roles": ["main"]`만 가진 에이전트는 위임 대상에서 자동 제외됩니다.)
 
+#### 🧰 Supervisor 도구 구성 (`tools_supervisor`, 총 17종)
+이번 미션에서 `main_agent`에 바인딩하는 `tools_supervisor`([`app/agents/main_agent/tools.py`](../app/agents/main_agent/tools.py))는 아래 **3개 그룹 총 17종**으로 구성되어 있습니다.
+
+| 그룹 (모듈) | 포함 도구 | 주요 역할 |
+| :--- | :--- | :--- |
+| **서브에이전트 오케스트레이션 (4종)**<br>(`app/tools/supervisor_tools.py`) | `list_sub_agents`<br>`invoke_sub_agent`<br>`get_sub_agent_job_status`<br>`cancel_sub_agent_job` | • 위임 가능(`"sub"`) 에이전트 목록 조회<br>• 동기/백그라운드 작업 위임 및 `sub_thread_id` 세션 격리·연속 실행<br>• 백그라운드 작업 상태·실시간 텔레메트리·결과 조회 (`job_id` 생략 시 세션 전체 목록)<br>• 실행·대기 중인 작업 즉시 취소, 브라우저 탭 정리 및 Wakeup 억제 |
+| **계획 수립 & 태스크 보드 (5종)**<br>(`app/tools/plan.py`) | `enter_plan`, `exit_plan`<br>`task_create`, `task_list`, `task_update` | • 읽기 전용 계획 모드 진입 및 실행 단계 확정(`plan_state.json`)<br>• 세션별 상태 칠판(`task_state.json`)에 작업 등록·조회·완료/차단 갱신 |
+| **공통 파일·검색·셸·웹 (8종)**<br>(`app/tools/common.py`) | `file_read`, `file_writer`, `file_edit`<br>`grep_search`, `glob_search`, `bash_command`<br>`web_search`, `web_fetch` | • 파일 입출력, 코드/텍스트 탐색, 셸 명령 및 스킬 스크립트 실행, 웹 검색·페이지 수집 |
+
 #### 🔄 백그라운드 서브에이전트 실행 및 Reactive Wakeup 흐름 (`run_in_background=True`)
 크롤링이나 대시보드 생성처럼 수 분이 걸리는 무거운 작업은 동기식 대기 시 HTTP 타임아웃과 UI 블로킹을 유발합니다. 이를 방지하기 위해 FastAPI 작업 관리자(Job Runner)가 비동기로 백그라운드 작업을 처리하고, **완료 즉시 Supervisor를 자동으로 다시 깨워(Reactive Wakeup) 후속 작업을 마친 뒤 사용자에게 최종 결과를 전달**합니다.
 
