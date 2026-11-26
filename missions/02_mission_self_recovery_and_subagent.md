@@ -43,6 +43,45 @@ graph LR
 메인 에이전트 혼자서 크롤링, 데이터 분석, 보고서 작성까지 모든 도구를 다 쓰려 하면 컨텍스트가 폭발합니다.  
 Supervisor는 계획을 수립하고, **`invoke_sub_agent`** 도구를 통해 `AGENT_METADATA["roles"]`에 `"sub"` 역할이 부여된 전문 에이전트(`scraper`, `analyst`)에게 독립된 세션으로 작업을 위임한 뒤 요약 보고서만 회수합니다. (`main_agent`, `chatbot`처럼 `"roles": ["main"]`만 가진 에이전트는 위임 대상에서 자동 제외됩니다.)
 
+#### 🔄 백그라운드 서브에이전트 실행 및 Reactive Wakeup 흐름 (`run_in_background=True`)
+크롤링이나 대시보드 생성처럼 수 분이 걸리는 무거운 작업은 동기식 대기 시 HTTP 타임아웃과 UI 블로킹을 유발합니다. 이를 방지하기 위해 FastAPI 작업 관리자(Job Runner)가 비동기로 백그라운드 작업을 처리하고, **완료 즉시 Supervisor를 자동으로 다시 깨워(Reactive Wakeup) 후속 작업을 마친 뒤 사용자에게 최종 결과를 전달**합니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 👤 사용자
+    participant UI as 💬 Chainlit UI
+    participant Sup as 👑 Supervisor (main_agent)
+    participant API as 🚀 FastAPI 작업 관리자 (Job Runner)
+    participant Sub as 🔬 Sub-Agent (analyst / scraper)
+
+    User->>UI: "엔비디아 소식을 카드뉴스로 시각화해줘"
+    UI->>Sup: POST /agents/main_agent/stream
+    Sup->>API: invoke_sub_agent(run_in_background=True)<br/>POST /agents/analyst/jobs
+    API->>Sub: 독립 세션(sub_thread_id)으로 백그라운드 실행 시작
+    activate Sub
+    API-->>Sup: Job ID 즉시 반환 (~0.1초)
+    Sup-->>UI: "백그라운드 작업을 위임했습니다 (Job ID)" (1차 턴 종료)
+    UI-->>User: 작업 시작 안내 (대기 중 다른 질문·대화 가능)
+
+    Note over Sub: 독립 컨텍스트에서 심층 분석 및 HTML 대시보드 생성 수행
+    Sub-->>API: [TASK REPORT] 산출물 경로 및 완료 보고 반환
+    deactivate Sub
+
+    API->>Sup: 완료 통보 (Reactive Wakeup)<br/>[SYSTEM NOTIFICATION: SUB-AGENT COMPLETED] + [TASK REPORT]
+    activate Sup
+    Note over Sup: 완료 보고서 검토 및 후속 작업 수행<br/>(결과 종합, 필요 시 추가 위임, Render_HTML 응답 구성)
+    Sup-->>API: 최종 응답(supervisor_response) 작성 및 Checkpointer/Job Store 저장
+    deactivate Sup
+
+    UI->>API: 세션 모니터링 (GET /sessions/{thread_id}/jobs)
+    API-->>UI: 완료 상태 + Supervisor 최종 응답 전달
+    UI-->>User: 🔔 백그라운드 작업 완료 알림 + 최종 보고서 및 시각화 결과 전달!
+```
+
+- **비블로킹 위임 & 세션 격리**: 위임 즉시 `Job ID`를 받고 1차 턴을 끝내므로 사용자는 기다리지 않고 다른 대화를 이어갈 수 있으며, 서브에이전트는 고유 `sub_thread_id`로 분리되어 단기 기억이 섞이지 않습니다.
+- **작업 관리자 → Supervisor 자동 재개(Wakeup)**: 서브에이전트가 종료되면 FastAPI 작업 관리자가 `[TASK REPORT]`를 실어 Supervisor를 자동 호출하므로, 사용자가 *"다 됐어?"* 라고 묻지 않아도 Supervisor가 후속 종합 작업과 시각화 태그 생성을 마친 최종 결과를 전달합니다.
+
 ---
 
 ## 🛠️ 실습 단계별 수행 가이드
