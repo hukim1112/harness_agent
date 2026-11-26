@@ -68,7 +68,7 @@ sequenceDiagram
     Sub-->>API: [TASK REPORT] 산출물 경로 및 완료 보고 반환
     deactivate Sub
 
-    API->>Sup: 완료 통보 (Reactive Wakeup)<br/>[SYSTEM NOTIFICATION: SUB-AGENT COMPLETED] + [TASK REPORT]
+    API->>Sup: 완료 통보 (Reactive Wakeup)<br/>[SYSTEM NOTIFICATION: BACKGROUND TASK COMPLETED] + [TASK REPORT]
     activate Sup
     Note over Sup: 완료 보고서 검토 및 후속 작업 수행<br/>(결과 종합, 필요 시 추가 위임, Render_HTML 응답 구성)
     Sup-->>API: 최종 응답(supervisor_response) 작성 및 Checkpointer/Job Store 저장
